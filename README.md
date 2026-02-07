@@ -6,9 +6,10 @@ Sync your Claude Code sessions across devices using Cloudflare R2 with end-to-en
 
 - **Cross-device sync**: Continue Claude Code conversations on any laptop
 - **End-to-end encryption**: All files encrypted with age before upload
+- **Passphrase-based keys**: Same passphrase = same key on any device (no file copying)
 - **Minimal cost**: Uses Cloudflare R2 free tier (10GB included)
-- **Simple CLI**: `push`, `pull`, `status`, `diff` commands
-- **Conflict handling**: Automatic detection with `.conflict` file preservation
+- **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
+- **Conflict resolution**: Interactive tool to review and resolve sync conflicts
 
 ## What gets synced
 
@@ -80,16 +81,35 @@ On your other laptop:
 # Install
 go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 
+# Initialize with same R2 credentials and passphrase
+claude-sync init --passphrase
+
+# Pull sessions
+claude-sync pull
+```
+
+**That's it!** If you used passphrase mode on your first device, just enter the same passphrase. The encryption key is derived deterministically - no file copying needed.
+
+<details>
+<summary>Alternative: Using random key (more secure)</summary>
+
+If you chose random key generation instead of passphrase:
+
+```bash
+# Install
+go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+
 # Initialize with same R2 credentials
-claude-sync init
+claude-sync init --skip-guide
 
 # Copy your encryption key from first device
-# (replace with your actual key content)
 scp first-laptop:~/.claude-sync/age-key.txt ~/.claude-sync/
 
 # Pull sessions
 claude-sync pull
 ```
+
+</details>
 
 ## Usage
 
@@ -105,6 +125,9 @@ claude-sync status
 
 # Show differences between local and remote
 claude-sync diff
+
+# List and resolve conflicts
+claude-sync conflicts
 
 # Quiet mode (for scripts)
 claude-sync push -q
@@ -127,11 +150,28 @@ trap 'claude-sync push --quiet' EXIT
 
 ## Conflict resolution
 
-When both local and remote files have changed:
+When both local and remote files have changed, the remote version is saved as a `.conflict` file.
 
-1. Local version is kept as-is
-2. Remote version is saved as `<filename>.conflict.<timestamp>`
-3. You can manually review and merge
+```bash
+# List all conflicts
+claude-sync conflicts --list
+
+# Interactive resolution (review each conflict)
+claude-sync conflicts
+
+# Batch resolve - keep all local versions
+claude-sync conflicts --keep local
+
+# Batch resolve - keep all remote versions
+claude-sync conflicts --keep remote
+```
+
+In interactive mode, you can:
+- **[l]** Keep local version (delete conflict file)
+- **[r]** Keep remote version (replace local with conflict)
+- **[d]** Show diff between versions
+- **[s]** Skip (decide later)
+- **[q]** Quit
 
 ## Security
 

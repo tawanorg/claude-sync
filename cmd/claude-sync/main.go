@@ -125,12 +125,16 @@ func waitForEnter(reader *bufio.Reader) {
 
 func initCmd() *cobra.Command {
 	var accountID, accessKey, secretKey, bucket string
-	var skipGuide bool
+	var skipGuide, usePassphrase bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize claude-sync configuration",
-		Long:  `Set up Cloudflare R2 credentials and generate encryption keys.`,
+		Long: `Set up Cloudflare R2 credentials and generate encryption keys.
+
+By default, a random encryption key is generated that you must copy to other devices.
+Use --passphrase to derive the key from a memorable passphrase instead - same
+passphrase on any device produces the same key, no file copying needed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reader := bufio.NewReader(os.Stdin)
 
@@ -214,7 +218,7 @@ func initCmd() *cobra.Command {
 
 			// Step 3: Generate Encryption Key
 			currentStep++
-			printStep(currentStep, totalSteps, "Generate Encryption Key")
+			printStep(currentStep, totalSteps, "Set Up Encryption")
 			printInfo("All files are encrypted locally before upload using 'age' encryption.")
 			fmt.Println()
 
@@ -224,7 +228,72 @@ func initCmd() *cobra.Command {
 			}
 
 			keyPath := config.AgeKeyFilePath()
-			if !crypto.KeyExists(keyPath) {
+
+			// Check if we should use passphrase mode
+			if !usePassphrase && !crypto.KeyExists(keyPath) && !skipGuide {
+				// Ask user which mode they prefer
+				fmt.Printf("      %sHow do you want to set up encryption?%s\n\n", colorBold, colorReset)
+				fmt.Printf("      %s[1]%s Passphrase %s(recommended)%s\n", colorCyan, colorReset, colorGreen, colorReset)
+				printInfo("    Same passphrase = same key on any device. No file copying.")
+				fmt.Println()
+				fmt.Printf("      %s[2]%s Random key\n", colorCyan, colorReset)
+				printInfo("    More secure, but you must copy the key file to other devices.")
+				fmt.Println()
+
+				choice := promptInput(reader, "Choice", "1")
+				usePassphrase = choice == "1" || strings.ToLower(choice) == "passphrase"
+				fmt.Println()
+			}
+
+			if usePassphrase {
+				// Passphrase-based key derivation
+				if crypto.KeyExists(keyPath) {
+					printWarning("Encryption key already exists.")
+					printInfo("Using passphrase will overwrite it.")
+					confirm := promptInput(reader, "Continue? [y/N]", "n")
+					if strings.ToLower(confirm) != "y" {
+						printSuccess("Using existing encryption key: " + keyPath)
+						goto skipKeyGen
+					}
+					fmt.Println()
+				}
+
+				printInfo("Enter a passphrase you'll remember.")
+				printInfo("Use the SAME passphrase on all your devices.")
+				fmt.Println()
+
+				var passphrase string
+				for {
+					fmt.Printf("      Passphrase (min 8 chars): ")
+					passBytes, _ := reader.ReadString('\n')
+					passphrase = strings.TrimSpace(passBytes)
+
+					if err := crypto.ValidatePassphraseStrength(passphrase); err != nil {
+						printWarning(err.Error())
+						continue
+					}
+
+					// Confirm passphrase
+					fmt.Printf("      Confirm passphrase: ")
+					confirmBytes, _ := reader.ReadString('\n')
+					confirm := strings.TrimSpace(confirmBytes)
+
+					if passphrase != confirm {
+						printWarning("Passphrases don't match. Try again.")
+						continue
+					}
+					break
+				}
+
+				if err := crypto.GenerateKeyFromPassphrase(keyPath, passphrase); err != nil {
+					return fmt.Errorf("failed to generate encryption key: %w", err)
+				}
+				printSuccess("Encryption key derived from passphrase")
+				fmt.Println()
+				printInfo("Use this same passphrase when setting up other devices.")
+
+			} else if !crypto.KeyExists(keyPath) {
+				// Random key generation
 				if err := crypto.GenerateKey(keyPath); err != nil {
 					return fmt.Errorf("failed to generate encryption key: %w", err)
 				}
@@ -236,6 +305,7 @@ func initCmd() *cobra.Command {
 			} else {
 				printSuccess("Using existing encryption key: " + keyPath)
 			}
+		skipKeyGen:
 
 			// Save config
 			cfg := &config.Config{
@@ -283,8 +353,12 @@ func initCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Printf("  %s2.%s On another device, install and pull:\n", colorCyan, colorReset)
 			printCommand("go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest")
-			printCommand("claude-sync init --skip-guide")
-			printCommand("# Copy ~/.claude-sync/age-key.txt from this device")
+			if usePassphrase {
+				printCommand("claude-sync init --passphrase  # Use same passphrase")
+			} else {
+				printCommand("claude-sync init --skip-guide")
+				printCommand("# Copy ~/.claude-sync/age-key.txt from this device")
+			}
 			printCommand("claude-sync pull")
 			fmt.Println()
 			fmt.Printf("  %s3.%s (Optional) Add to shell for auto-sync:\n", colorCyan, colorReset)
@@ -306,6 +380,7 @@ func initCmd() *cobra.Command {
 	cmd.Flags().StringVar(&secretKey, "secret-key", "", "R2 Secret Access Key")
 	cmd.Flags().StringVar(&bucket, "bucket", "", "R2 Bucket Name")
 	cmd.Flags().BoolVar(&skipGuide, "skip-guide", false, "Skip the setup guide (for experienced users)")
+	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase (no file copying needed)")
 
 	return cmd
 }
