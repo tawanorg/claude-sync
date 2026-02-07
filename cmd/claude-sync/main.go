@@ -21,6 +21,18 @@ var (
 	quiet   bool
 )
 
+// ANSI color codes
+const (
+	colorReset  = "\033[0m"
+	colorBold   = "\033[1m"
+	colorDim    = "\033[2m"
+	colorCyan   = "\033[36m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+	colorMagenta = "\033[35m"
+)
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:     "claude-sync",
@@ -44,73 +56,181 @@ func main() {
 	}
 }
 
+func printBanner() {
+	banner := `
+   _____ _                 _        _____
+  / ____| |               | |      / ____|
+ | |    | | __ _ _   _  __| | ___ | (___  _   _ _ __   ___
+ | |    | |/ _` + "`" + ` | | | |/ _` + "`" + ` |/ _ \ \___ \| | | | '_ \ / __|
+ | |____| | (_| | |_| | (_| |  __/ ____) | |_| | | | | (__
+  \_____|_|\__,_|\__,_|\__,_|\___||_____/ \__, |_| |_|\___|
+                                           __/ |
+                                          |___/
+`
+	fmt.Print(colorCyan + banner + colorReset)
+	fmt.Printf("  %sWelcome to Claude Sync!%s %sv%s%s\n", colorBold, colorReset, colorDim, version, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sSync your Claude Code sessions across all your devices.%s\n", colorReset, colorReset)
+	fmt.Printf("  %sEnd-to-end encrypted with age • Stored on Cloudflare R2 (free tier)%s\n", colorDim, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sBuilt with love by @tawanorg%s\n", colorDim, colorReset)
+	fmt.Printf("  %sGitHub: https://github.com/tawanorg/claude-sync%s\n", colorDim, colorReset)
+	fmt.Printf("  %sContributions welcome! Issues, PRs, and feedback appreciated.%s\n", colorDim, colorReset)
+	fmt.Println()
+	fmt.Println(strings.Repeat("─", 60))
+}
+
+func printStep(step int, total int, text string) {
+	fmt.Printf("\n%s[%d/%d]%s %s%s%s\n", colorCyan, step, total, colorReset, colorBold, text, colorReset)
+}
+
+func printInfo(text string) {
+	fmt.Printf("      %s%s%s\n", colorDim, text, colorReset)
+}
+
+func printSuccess(text string) {
+	fmt.Printf("  %s%s%s\n", colorGreen, text, colorReset)
+}
+
+func printWarning(text string) {
+	fmt.Printf("  %s%s%s\n", colorYellow, text, colorReset)
+}
+
+func printCommand(cmd string) {
+	fmt.Printf("      %s$ %s%s\n", colorMagenta, cmd, colorReset)
+}
+
+func promptInput(reader *bufio.Reader, prompt string, defaultVal string) string {
+	if defaultVal != "" {
+		fmt.Printf("      %s [%s]: ", prompt, defaultVal)
+	} else {
+		fmt.Printf("      %s: ", prompt)
+	}
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input == "" && defaultVal != "" {
+		return defaultVal
+	}
+	return input
+}
+
+func waitForEnter(reader *bufio.Reader) {
+	fmt.Printf("\n      %sPress Enter when ready...%s", colorDim, colorReset)
+	reader.ReadString('\n')
+}
+
 func initCmd() *cobra.Command {
 	var accountID, accessKey, secretKey, bucket string
+	var skipGuide bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize claude-sync configuration",
 		Long:  `Set up Cloudflare R2 credentials and generate encryption keys.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			reader := bufio.NewReader(os.Stdin)
+
+			// Show banner
+			printBanner()
+
 			if config.Exists() {
-				fmt.Println("Configuration already exists at", config.ConfigFilePath())
-				fmt.Print("Overwrite? [y/N]: ")
-				reader := bufio.NewReader(os.Stdin)
+				printWarning("Configuration already exists at " + config.ConfigFilePath())
+				fmt.Print("      Overwrite? [y/N]: ")
 				answer, _ := reader.ReadString('\n')
 				answer = strings.TrimSpace(strings.ToLower(answer))
 				if answer != "y" && answer != "yes" {
-					fmt.Println("Aborted.")
+					fmt.Println("      Aborted.")
 					return nil
 				}
+				fmt.Println()
 			}
 
-			// Interactive prompts if not provided via flags
-			reader := bufio.NewReader(os.Stdin)
+			totalSteps := 4
+			if skipGuide {
+				totalSteps = 3
+			}
 
+			// Step 1: Create R2 Bucket (with guidance)
+			if !skipGuide {
+				printStep(1, totalSteps, "Create Cloudflare R2 Bucket")
+				printInfo("R2 is Cloudflare's S3-compatible storage (free tier: 10GB)")
+				fmt.Println()
+				printInfo("1. Go to: https://dash.cloudflare.com/?to=/:account/r2/new")
+				printInfo("2. Click 'Create bucket'")
+				printInfo("3. Name it 'claude-sync' (or your preferred name)")
+				printInfo("4. Leave defaults and click 'Create bucket'")
+				waitForEnter(reader)
+			}
+
+			// Step 2: Get R2 API Token
+			currentStep := 1
+			if !skipGuide {
+				currentStep = 2
+			}
+			printStep(currentStep, totalSteps, "Get R2 API Credentials")
+			if !skipGuide {
+				printInfo("You need an API token with read/write access to R2.")
+				fmt.Println()
+				printInfo("1. Go to: https://dash.cloudflare.com/?to=/:account/r2/api-tokens")
+				printInfo("2. Click 'Create API token'")
+				printInfo("3. Give it a name like 'claude-sync'")
+				printInfo("4. Permissions: 'Object Read & Write'")
+				printInfo("5. Specify bucket: select your bucket (or leave as 'All')")
+				printInfo("6. Click 'Create API Token'")
+				fmt.Println()
+				printInfo("Copy the credentials shown (you won't see them again!)")
+				waitForEnter(reader)
+				fmt.Println()
+			}
+
+			// Prompt for Account ID
 			if accountID == "" {
-				fmt.Print("Cloudflare Account ID: ")
-				accountID, _ = reader.ReadString('\n')
-				accountID = strings.TrimSpace(accountID)
+				printInfo("Your Account ID is in the R2 dashboard URL:")
+				printInfo("https://dash.cloudflare.com/<ACCOUNT_ID>/r2/...")
+				fmt.Println()
+				accountID = promptInput(reader, "Account ID", "")
 			}
 
+			// Prompt for Access Key
 			if accessKey == "" {
-				fmt.Print("R2 Access Key ID: ")
-				accessKey, _ = reader.ReadString('\n')
-				accessKey = strings.TrimSpace(accessKey)
+				fmt.Println()
+				accessKey = promptInput(reader, "Access Key ID", "")
 			}
 
+			// Prompt for Secret Key
 			if secretKey == "" {
-				fmt.Print("R2 Secret Access Key: ")
-				secretKey, _ = reader.ReadString('\n')
-				secretKey = strings.TrimSpace(secretKey)
+				secretKey = promptInput(reader, "Secret Access Key", "")
 			}
 
+			// Prompt for Bucket
 			if bucket == "" {
-				fmt.Print("R2 Bucket Name [claude-sync]: ")
-				bucket, _ = reader.ReadString('\n')
-				bucket = strings.TrimSpace(bucket)
-				if bucket == "" {
-					bucket = "claude-sync"
-				}
+				fmt.Println()
+				bucket = promptInput(reader, "Bucket name", "claude-sync")
 			}
 
-			// Create config directory
+			// Step 3: Generate Encryption Key
+			currentStep++
+			printStep(currentStep, totalSteps, "Generate Encryption Key")
+			printInfo("All files are encrypted locally before upload using 'age' encryption.")
+			fmt.Println()
+
 			configDir := config.ConfigDirPath()
 			if err := os.MkdirAll(configDir, 0700); err != nil {
 				return fmt.Errorf("failed to create config directory: %w", err)
 			}
 
-			// Generate age key if not exists
 			keyPath := config.AgeKeyFilePath()
 			if !crypto.KeyExists(keyPath) {
-				fmt.Println("Generating encryption key...")
 				if err := crypto.GenerateKey(keyPath); err != nil {
 					return fmt.Errorf("failed to generate encryption key: %w", err)
 				}
-				fmt.Printf("Encryption key saved to: %s\n", keyPath)
-				fmt.Println("IMPORTANT: Back up this key file! You'll need it on other devices.")
+				printSuccess("Encryption key generated: " + keyPath)
+				fmt.Println()
+				printWarning("IMPORTANT: Back up this key file!")
+				printInfo("You'll need it to decrypt your sessions on other devices.")
+				printInfo("Without it, your synced data cannot be recovered.")
 			} else {
-				fmt.Printf("Using existing encryption key: %s\n", keyPath)
+				printSuccess("Using existing encryption key: " + keyPath)
 			}
 
 			// Save config
@@ -126,10 +246,10 @@ func initCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Configuration saved to: %s\n", config.ConfigFilePath())
+			// Step 4: Test Connection
+			currentStep++
+			printStep(currentStep, totalSteps, "Test Connection")
 
-			// Test connection
-			fmt.Println("\nTesting R2 connection...")
 			cfg.Endpoint = fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 			r2, err := storage.NewR2Client(cfg)
 			if err != nil {
@@ -139,17 +259,39 @@ func initCmd() *cobra.Command {
 			ctx := context.Background()
 			exists, err := r2.BucketExists(ctx)
 			if err != nil {
-				fmt.Printf("Warning: Could not check bucket: %v\n", err)
+				printWarning("Could not verify bucket: " + err.Error())
+				printInfo("Check your credentials and try again.")
 			} else if exists {
-				fmt.Println("Bucket exists and is accessible!")
+				printSuccess("Connected to R2 bucket '" + bucket + "'")
 			} else {
-				fmt.Printf("Bucket '%s' not found. Create it in the Cloudflare dashboard.\n", bucket)
+				printWarning("Bucket '" + bucket + "' not found")
+				printInfo("Create it at: https://dash.cloudflare.com/?to=/:account/r2/new")
 			}
 
-			fmt.Println("\nSetup complete! You can now use:")
-			fmt.Println("  claude-sync push   - Upload your sessions")
-			fmt.Println("  claude-sync pull   - Download sessions from cloud")
-			fmt.Println("  claude-sync status - Show pending changes")
+			// Success message
+			fmt.Println()
+			fmt.Println(colorGreen + "  Setup complete!" + colorReset)
+			fmt.Println()
+			fmt.Println("  " + colorBold + "Next steps:" + colorReset)
+			fmt.Println()
+			fmt.Printf("  %s1.%s Push your sessions to the cloud:\n", colorCyan, colorReset)
+			printCommand("claude-sync push")
+			fmt.Println()
+			fmt.Printf("  %s2.%s On another device, install and pull:\n", colorCyan, colorReset)
+			printCommand("go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest")
+			printCommand("claude-sync init --skip-guide")
+			printCommand("# Copy ~/.claude-sync/age-key.txt from this device")
+			printCommand("claude-sync pull")
+			fmt.Println()
+			fmt.Printf("  %s3.%s (Optional) Add to shell for auto-sync:\n", colorCyan, colorReset)
+			printInfo("Add to ~/.zshrc or ~/.bashrc:")
+			fmt.Println()
+			fmt.Printf("      %s# Auto-sync Claude sessions%s\n", colorDim, colorReset)
+			fmt.Printf("      %sif command -v claude-sync &> /dev/null; then%s\n", colorDim, colorReset)
+			fmt.Printf("      %s  claude-sync pull --quiet &%s\n", colorDim, colorReset)
+			fmt.Printf("      %sfi%s\n", colorDim, colorReset)
+			fmt.Printf("      %strap 'claude-sync push --quiet' EXIT%s\n", colorDim, colorReset)
+			fmt.Println()
 
 			return nil
 		},
@@ -159,6 +301,7 @@ func initCmd() *cobra.Command {
 	cmd.Flags().StringVar(&accessKey, "access-key", "", "R2 Access Key ID")
 	cmd.Flags().StringVar(&secretKey, "secret-key", "", "R2 Secret Access Key")
 	cmd.Flags().StringVar(&bucket, "bucket", "", "R2 Bucket Name")
+	cmd.Flags().BoolVar(&skipGuide, "skip-guide", false, "Skip the setup guide (for experienced users)")
 
 	return cmd
 }
@@ -179,6 +322,44 @@ func pushCmd() *cobra.Command {
 				return err
 			}
 
+			if !quiet {
+				syncer.SetProgressFunc(func(event sync.ProgressEvent) {
+					if event.Error != nil {
+						fmt.Printf("\r%s✗%s %s: %v\n", colorYellow, colorReset, event.Path, event.Error)
+						return
+					}
+
+					switch event.Action {
+					case "scan":
+						if event.Complete {
+							fmt.Printf("\r%s✓%s No changes to push\n", colorGreen, colorReset)
+						} else {
+							fmt.Printf("%s⋯%s %s\n", colorDim, colorReset, event.Path)
+						}
+					case "upload":
+						if event.Complete {
+							// Final newline after progress
+						} else {
+							// Clear line and show progress
+							progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
+							shortPath := truncatePath(event.Path, 50)
+							fmt.Printf("\r%s↑%s %s%s%s %s (%s)%s",
+								colorCyan, colorReset,
+								colorDim, progress, colorReset,
+								shortPath, formatSize(event.Size),
+								strings.Repeat(" ", 10))
+						}
+					case "delete":
+						shortPath := truncatePath(event.Path, 50)
+						fmt.Printf("\r%s✗%s [%d/%d] %s (deleted)%s\n",
+							colorYellow, colorReset,
+							event.Current, event.Total,
+							shortPath,
+							strings.Repeat(" ", 10))
+					}
+				})
+			}
+
 			ctx := context.Background()
 			result, err := syncer.Push(ctx)
 			if err != nil {
@@ -186,16 +367,31 @@ func pushCmd() *cobra.Command {
 			}
 
 			if !quiet {
-				if len(result.Uploaded) > 0 {
-					fmt.Printf("\nUploaded %d file(s)\n", len(result.Uploaded))
-				}
-				if len(result.Deleted) > 0 {
-					fmt.Printf("Deleted %d file(s)\n", len(result.Deleted))
-				}
-				if len(result.Errors) > 0 {
-					fmt.Printf("\n%d error(s):\n", len(result.Errors))
-					for _, e := range result.Errors {
-						fmt.Printf("  - %v\n", e)
+				fmt.Println() // Clear the progress line
+
+				if len(result.Uploaded) == 0 && len(result.Deleted) == 0 && len(result.Errors) == 0 {
+					// Already printed "No changes"
+				} else {
+					// Summary
+					var parts []string
+					if len(result.Uploaded) > 0 {
+						parts = append(parts, fmt.Sprintf("%s%d uploaded%s", colorGreen, len(result.Uploaded), colorReset))
+					}
+					if len(result.Deleted) > 0 {
+						parts = append(parts, fmt.Sprintf("%s%d deleted%s", colorYellow, len(result.Deleted), colorReset))
+					}
+					if len(result.Errors) > 0 {
+						parts = append(parts, fmt.Sprintf("%s%d failed%s", colorYellow, len(result.Errors), colorReset))
+					}
+					if len(parts) > 0 {
+						fmt.Printf("%s✓%s Push complete: %s\n", colorGreen, colorReset, strings.Join(parts, ", "))
+					}
+
+					if len(result.Errors) > 0 {
+						fmt.Printf("\n%sErrors:%s\n", colorYellow, colorReset)
+						for _, e := range result.Errors {
+							fmt.Printf("  %s•%s %v\n", colorYellow, colorReset, e)
+						}
 					}
 				}
 			}
@@ -203,6 +399,13 @@ func pushCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func truncatePath(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+	return "..." + path[len(path)-maxLen+3:]
 }
 
 func pullCmd() *cobra.Command {
@@ -221,6 +424,40 @@ func pullCmd() *cobra.Command {
 				return err
 			}
 
+			if !quiet {
+				syncer.SetProgressFunc(func(event sync.ProgressEvent) {
+					if event.Error != nil {
+						fmt.Printf("\r%s✗%s %s: %v\n", colorYellow, colorReset, event.Path, event.Error)
+						return
+					}
+
+					switch event.Action {
+					case "scan":
+						if event.Complete {
+							fmt.Printf("\r%s✓%s Already up to date\n", colorGreen, colorReset)
+						} else {
+							fmt.Printf("%s⋯%s %s\n", colorDim, colorReset, event.Path)
+						}
+					case "download":
+						if event.Complete {
+							// Final newline after progress
+						} else {
+							// Clear line and show progress
+							progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
+							shortPath := truncatePath(event.Path, 50)
+							fmt.Printf("\r%s↓%s %s%s%s %s (%s)%s",
+								colorGreen, colorReset,
+								colorDim, progress, colorReset,
+								shortPath, formatSize(event.Size),
+								strings.Repeat(" ", 10))
+						}
+					case "conflict":
+						fmt.Printf("\r%s⚠%s Conflict: %s (saved as .conflict)\n",
+							colorYellow, colorReset, event.Path)
+					}
+				})
+			}
+
 			ctx := context.Background()
 			result, err := syncer.Pull(ctx)
 			if err != nil {
@@ -228,19 +465,39 @@ func pullCmd() *cobra.Command {
 			}
 
 			if !quiet {
-				if len(result.Downloaded) > 0 {
-					fmt.Printf("\nDownloaded %d file(s)\n", len(result.Downloaded))
-				}
-				if len(result.Conflicts) > 0 {
-					fmt.Printf("\n%d conflict(s) (saved as .conflict files):\n", len(result.Conflicts))
-					for _, c := range result.Conflicts {
-						fmt.Printf("  - %s\n", c)
+				fmt.Println() // Clear the progress line
+
+				if len(result.Downloaded) == 0 && len(result.Conflicts) == 0 && len(result.Errors) == 0 {
+					// Already printed "Already up to date"
+				} else {
+					// Summary
+					var parts []string
+					if len(result.Downloaded) > 0 {
+						parts = append(parts, fmt.Sprintf("%s%d downloaded%s", colorGreen, len(result.Downloaded), colorReset))
 					}
-				}
-				if len(result.Errors) > 0 {
-					fmt.Printf("\n%d error(s):\n", len(result.Errors))
-					for _, e := range result.Errors {
-						fmt.Printf("  - %v\n", e)
+					if len(result.Conflicts) > 0 {
+						parts = append(parts, fmt.Sprintf("%s%d conflicts%s", colorYellow, len(result.Conflicts), colorReset))
+					}
+					if len(result.Errors) > 0 {
+						parts = append(parts, fmt.Sprintf("%s%d failed%s", colorYellow, len(result.Errors), colorReset))
+					}
+					if len(parts) > 0 {
+						fmt.Printf("%s✓%s Pull complete: %s\n", colorGreen, colorReset, strings.Join(parts, ", "))
+					}
+
+					if len(result.Conflicts) > 0 {
+						fmt.Printf("\n%sConflicts (both local and remote changed):%s\n", colorYellow, colorReset)
+						for _, c := range result.Conflicts {
+							fmt.Printf("  %s•%s %s\n", colorYellow, colorReset, c)
+						}
+						fmt.Printf("\n%sLocal versions kept. Remote versions saved as .conflict files.%s\n", colorDim, colorReset)
+					}
+
+					if len(result.Errors) > 0 {
+						fmt.Printf("\n%sErrors:%s\n", colorYellow, colorReset)
+						for _, e := range result.Errors {
+							fmt.Printf("  %s•%s %v\n", colorYellow, colorReset, e)
+						}
 					}
 				}
 			}

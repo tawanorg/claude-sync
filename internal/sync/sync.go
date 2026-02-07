@@ -14,11 +14,12 @@ import (
 )
 
 type Syncer struct {
-	r2        *storage.R2Client
-	encryptor *crypto.Encryptor
-	state     *SyncState
-	claudeDir string
-	quiet     bool
+	r2         *storage.R2Client
+	encryptor  *crypto.Encryptor
+	state      *SyncState
+	claudeDir  string
+	quiet      bool
+	onProgress ProgressFunc
 }
 
 type SyncResult struct {
@@ -28,6 +29,18 @@ type SyncResult struct {
 	Conflicts  []string
 	Errors     []error
 }
+
+type ProgressEvent struct {
+	Action   string // "upload", "download", "delete", "encrypt", "decrypt", "scan"
+	Path     string
+	Size     int64
+	Current  int
+	Total    int
+	Complete bool
+	Error    error
+}
+
+type ProgressFunc func(event ProgressEvent)
 
 func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	r2, err := storage.NewR2Client(cfg)
@@ -54,6 +67,16 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	}, nil
 }
 
+func (s *Syncer) SetProgressFunc(fn ProgressFunc) {
+	s.onProgress = fn
+}
+
+func (s *Syncer) progress(event ProgressEvent) {
+	if s.onProgress != nil {
+		s.onProgress(event)
+	}
+}
+
 func (s *Syncer) log(format string, args ...interface{}) {
 	if !s.quiet {
 		fmt.Printf(format+"\n", args...)
@@ -63,27 +86,49 @@ func (s *Syncer) log(format string, args ...interface{}) {
 func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 	result := &SyncResult{}
 
+	s.progress(ProgressEvent{Action: "scan", Path: "Detecting changes..."})
+
 	changes, err := s.state.DetectChanges(s.claudeDir, config.SyncPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect changes: %w", err)
 	}
 
 	if len(changes) == 0 {
-		s.log("No changes to push")
+		s.progress(ProgressEvent{Action: "scan", Complete: true})
 		return result, nil
 	}
 
-	for _, change := range changes {
+	total := len(changes)
+	for i, change := range changes {
 		switch change.Action {
 		case "add", "modify":
+			s.progress(ProgressEvent{
+				Action:  "upload",
+				Path:    change.Path,
+				Size:    change.LocalSize,
+				Current: i + 1,
+				Total:   total,
+			})
+
 			if err := s.uploadFile(ctx, change.Path); err != nil {
+				s.progress(ProgressEvent{
+					Action: "upload",
+					Path:   change.Path,
+					Error:  err,
+				})
 				result.Errors = append(result.Errors, fmt.Errorf("%s: %w", change.Path, err))
 				continue
 			}
 			result.Uploaded = append(result.Uploaded, change.Path)
-			s.log("Uploaded: %s", change.Path)
 
 		case "delete":
+			s.progress(ProgressEvent{
+				Action:  "delete",
+				Path:    change.Path,
+				Current: i + 1,
+				Total:   total,
+			})
+
 			remoteKey := s.remoteKey(change.Path)
 			if err := s.r2.Delete(ctx, remoteKey); err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("delete %s: %w", change.Path, err))
@@ -91,9 +136,10 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 			}
 			s.state.RemoveFile(change.Path)
 			result.Deleted = append(result.Deleted, change.Path)
-			s.log("Deleted: %s", change.Path)
 		}
 	}
+
+	s.progress(ProgressEvent{Action: "upload", Complete: true, Total: total})
 
 	s.state.LastPush = time.Now()
 	s.state.LastSync = time.Now()
@@ -107,6 +153,8 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	result := &SyncResult{}
 
+	s.progress(ProgressEvent{Action: "scan", Path: "Fetching remote file list..."})
+
 	// List all remote objects
 	remoteObjects, err := s.r2.List(ctx, "")
 	if err != nil {
@@ -114,7 +162,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	}
 
 	if len(remoteObjects) == 0 {
-		s.log("No remote files found")
+		s.progress(ProgressEvent{Action: "scan", Complete: true})
 		return result, nil
 	}
 
@@ -135,7 +183,13 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
 
-	// Download files that are newer remotely or don't exist locally
+	// Build list of files to download
+	type downloadTask struct {
+		localPath string
+		remoteObj storage.ObjectInfo
+	}
+	var toDownload []downloadTask
+
 	for localPath, remoteObj := range remoteFiles {
 		localInfo, localExists := localFiles[localPath]
 		stateFile := s.state.GetFile(localPath)
@@ -153,6 +207,10 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 				if localHash != stateFile.Hash {
 					// Conflict: both changed
 					result.Conflicts = append(result.Conflicts, localPath)
+					s.progress(ProgressEvent{
+						Action: "conflict",
+						Path:   localPath,
+					})
 					if err := s.handleConflict(ctx, localPath, remoteObj); err != nil {
 						result.Errors = append(result.Errors, err)
 					}
@@ -165,14 +223,34 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 		}
 
 		if shouldDownload {
-			if err := s.downloadFile(ctx, localPath, remoteObj.Key); err != nil {
-				result.Errors = append(result.Errors, fmt.Errorf("%s: %w", localPath, err))
-				continue
-			}
-			result.Downloaded = append(result.Downloaded, localPath)
-			s.log("Downloaded: %s", localPath)
+			toDownload = append(toDownload, downloadTask{localPath, remoteObj})
 		}
 	}
+
+	// Download files with progress
+	total := len(toDownload)
+	for i, task := range toDownload {
+		s.progress(ProgressEvent{
+			Action:  "download",
+			Path:    task.localPath,
+			Size:    task.remoteObj.Size,
+			Current: i + 1,
+			Total:   total,
+		})
+
+		if err := s.downloadFile(ctx, task.localPath, task.remoteObj.Key); err != nil {
+			s.progress(ProgressEvent{
+				Action: "download",
+				Path:   task.localPath,
+				Error:  err,
+			})
+			result.Errors = append(result.Errors, fmt.Errorf("%s: %w", task.localPath, err))
+			continue
+		}
+		result.Downloaded = append(result.Downloaded, task.localPath)
+	}
+
+	s.progress(ProgressEvent{Action: "download", Complete: true, Total: total})
 
 	s.state.LastPull = time.Now()
 	s.state.LastSync = time.Now()
