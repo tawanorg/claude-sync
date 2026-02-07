@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,6 +52,7 @@ func main() {
 		pullCmd(),
 		statusCmd(),
 		diffCmd(),
+		conflictsCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -490,7 +494,8 @@ func pullCmd() *cobra.Command {
 						for _, c := range result.Conflicts {
 							fmt.Printf("  %s•%s %s\n", colorYellow, colorReset, c)
 						}
-						fmt.Printf("\n%sLocal versions kept. Remote versions saved as .conflict files.%s\n", colorDim, colorReset)
+						fmt.Printf("\n%sLocal versions kept. Remote saved as .conflict files.%s\n", colorDim, colorReset)
+						fmt.Printf("%sRun '%sclaude-sync conflicts%s%s' to review and resolve.%s\n", colorDim, colorCyan, colorReset, colorDim, colorReset)
 					}
 
 					if len(result.Errors) > 0 {
@@ -675,4 +680,246 @@ func formatSize(size int64) string {
 	default:
 		return fmt.Sprintf("%d B", size)
 	}
+}
+
+type conflictFile struct {
+	ConflictPath string
+	OriginalPath string
+	Timestamp    string
+}
+
+func conflictsCmd() *cobra.Command {
+	var listOnly bool
+	var resolveAll string
+
+	cmd := &cobra.Command{
+		Use:   "conflicts",
+		Short: "List and resolve sync conflicts",
+		Long: `Find and resolve conflicts from sync operations.
+
+When both local and remote files change, the remote version is saved
+as a .conflict file. Use this command to review and resolve them.
+
+Examples:
+  claude-sync conflicts              # Interactive resolution
+  claude-sync conflicts --list       # Just list conflicts
+  claude-sync conflicts --keep local # Keep all local versions
+  claude-sync conflicts --keep remote # Keep all remote versions`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			claudeDir := config.ClaudeDir()
+
+			// Find all .conflict files
+			conflicts, err := findConflicts(claudeDir)
+			if err != nil {
+				return err
+			}
+
+			if len(conflicts) == 0 {
+				fmt.Printf("%s✓%s No conflicts found\n", colorGreen, colorReset)
+				return nil
+			}
+
+			fmt.Printf("%sFound %d conflict(s):%s\n\n", colorYellow, len(conflicts), colorReset)
+
+			for i, c := range conflicts {
+				relOriginal, _ := filepath.Rel(claudeDir, c.OriginalPath)
+				fmt.Printf("  %s%d.%s %s\n", colorCyan, i+1, colorReset, relOriginal)
+				fmt.Printf("     %sConflict from: %s%s\n", colorDim, c.Timestamp, colorReset)
+			}
+			fmt.Println()
+
+			// List only mode
+			if listOnly {
+				return nil
+			}
+
+			// Batch resolve mode
+			if resolveAll != "" {
+				return batchResolveConflicts(conflicts, resolveAll)
+			}
+
+			// Interactive mode
+			return interactiveResolveConflicts(conflicts, claudeDir)
+		},
+	}
+
+	cmd.Flags().BoolVarP(&listOnly, "list", "l", false, "Only list conflicts, don't resolve")
+	cmd.Flags().StringVar(&resolveAll, "keep", "", "Resolve all conflicts: 'local' or 'remote'")
+
+	return cmd
+}
+
+func findConflicts(claudeDir string) ([]conflictFile, error) {
+	var conflicts []conflictFile
+
+	err := filepath.Walk(claudeDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// Look for .conflict. pattern
+		if strings.Contains(filepath.Base(path), ".conflict.") {
+			// Extract original path and timestamp
+			// Format: filename.ext.conflict.20260208-095132
+			parts := strings.Split(path, ".conflict.")
+			if len(parts) == 2 {
+				conflicts = append(conflicts, conflictFile{
+					ConflictPath: path,
+					OriginalPath: parts[0],
+					Timestamp:    parts[1],
+				})
+			}
+		}
+		return nil
+	})
+
+	// Sort by timestamp (newest first)
+	sort.Slice(conflicts, func(i, j int) bool {
+		return conflicts[i].Timestamp > conflicts[j].Timestamp
+	})
+
+	return conflicts, err
+}
+
+func batchResolveConflicts(conflicts []conflictFile, keep string) error {
+	keep = strings.ToLower(keep)
+	if keep != "local" && keep != "remote" {
+		return fmt.Errorf("--keep must be 'local' or 'remote'")
+	}
+
+	for _, c := range conflicts {
+		if keep == "local" {
+			// Delete conflict file, keep local
+			if err := os.Remove(c.ConflictPath); err != nil {
+				fmt.Printf("%s✗%s Failed to remove %s: %v\n", colorYellow, colorReset, c.ConflictPath, err)
+				continue
+			}
+			fmt.Printf("%s✓%s Kept local: %s\n", colorGreen, colorReset, filepath.Base(c.OriginalPath))
+		} else {
+			// Replace local with conflict, delete conflict
+			if err := os.Rename(c.ConflictPath, c.OriginalPath); err != nil {
+				fmt.Printf("%s✗%s Failed to replace %s: %v\n", colorYellow, colorReset, c.OriginalPath, err)
+				continue
+			}
+			fmt.Printf("%s✓%s Kept remote: %s\n", colorGreen, colorReset, filepath.Base(c.OriginalPath))
+		}
+	}
+
+	fmt.Printf("\n%s✓%s Resolved %d conflict(s)\n", colorGreen, colorReset, len(conflicts))
+	return nil
+}
+
+func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string) error {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("For each conflict, choose how to resolve:")
+	fmt.Printf("  %s[l]%s Keep local  %s[r]%s Keep remote  %s[d]%s Show diff  %s[s]%s Skip  %s[q]%s Quit\n\n",
+		colorCyan, colorReset,
+		colorCyan, colorReset,
+		colorCyan, colorReset,
+		colorCyan, colorReset,
+		colorCyan, colorReset)
+
+	resolved := 0
+	for i, c := range conflicts {
+		relOriginal, _ := filepath.Rel(claudeDir, c.OriginalPath)
+
+		// Get file sizes for context
+		localInfo, _ := os.Stat(c.OriginalPath)
+		conflictInfo, _ := os.Stat(c.ConflictPath)
+
+		localSize := int64(0)
+		conflictSize := int64(0)
+		if localInfo != nil {
+			localSize = localInfo.Size()
+		}
+		if conflictInfo != nil {
+			conflictSize = conflictInfo.Size()
+		}
+
+		fmt.Printf("%s[%d/%d]%s %s\n", colorCyan, i+1, len(conflicts), colorReset, relOriginal)
+		fmt.Printf("        Local: %s  |  Remote: %s  |  Conflict from: %s\n",
+			formatSize(localSize), formatSize(conflictSize), c.Timestamp)
+
+	promptLoop:
+		for {
+			fmt.Printf("        %sResolve [l/r/d/s/q]:%s ", colorDim, colorReset)
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(strings.ToLower(input))
+
+			switch input {
+			case "l", "local":
+				// Keep local, delete conflict
+				if err := os.Remove(c.ConflictPath); err != nil {
+					fmt.Printf("        %s✗%s Error: %v\n", colorYellow, colorReset, err)
+				} else {
+					fmt.Printf("        %s✓%s Kept local version\n\n", colorGreen, colorReset)
+					resolved++
+				}
+				break promptLoop
+
+			case "r", "remote":
+				// Replace local with conflict
+				if err := os.Rename(c.ConflictPath, c.OriginalPath); err != nil {
+					fmt.Printf("        %s✗%s Error: %v\n", colorYellow, colorReset, err)
+				} else {
+					fmt.Printf("        %s✓%s Replaced with remote version\n\n", colorGreen, colorReset)
+					resolved++
+				}
+				break promptLoop
+
+			case "d", "diff":
+				// Show diff
+				showDiff(c.OriginalPath, c.ConflictPath)
+
+			case "s", "skip":
+				fmt.Printf("        %s→%s Skipped\n\n", colorDim, colorReset)
+				break promptLoop
+
+			case "q", "quit":
+				fmt.Printf("\n%s✓%s Resolved %d of %d conflict(s)\n", colorGreen, colorReset, resolved, len(conflicts))
+				return nil
+
+			default:
+				fmt.Printf("        %sInvalid choice. Use l/r/d/s/q%s\n", colorDim, colorReset)
+			}
+		}
+	}
+
+	fmt.Printf("%s✓%s Resolved %d of %d conflict(s)\n", colorGreen, colorReset, resolved, len(conflicts))
+	return nil
+}
+
+func showDiff(localPath, conflictPath string) {
+	// Try to use diff command
+	cmd := exec.Command("diff", "-u", "--color=always", localPath, conflictPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Println()
+	fmt.Printf("        %s--- Local%s\n", colorGreen, colorReset)
+	fmt.Printf("        %s+++ Remote (conflict)%s\n", colorCyan, colorReset)
+	fmt.Println()
+
+	if err := cmd.Run(); err != nil {
+		// diff returns exit code 1 when files differ, which is expected
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			// Files differ, this is normal
+		} else if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 {
+			// diff command failed
+			fmt.Printf("        %sCould not run diff command%s\n", colorDim, colorReset)
+
+			// Fall back to showing file sizes
+			localInfo, _ := os.Stat(localPath)
+			conflictInfo, _ := os.Stat(conflictPath)
+			if localInfo != nil && conflictInfo != nil {
+				fmt.Printf("        Local:  %s (%s)\n", localPath, formatSize(localInfo.Size()))
+				fmt.Printf("        Remote: %s (%s)\n", conflictPath, formatSize(conflictInfo.Size()))
+			}
+		}
+	}
+	fmt.Println()
 }
