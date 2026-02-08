@@ -32,7 +32,7 @@
 
 ```bash
 # Install (pick one)
-npm install -g claude-sync
+npm install -g @tawandotorg/claude-sync
 # or: go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 
 # Set up (interactive wizard)
@@ -46,7 +46,7 @@ claude-sync push
 
 ```bash
 # Install
-npm install -g claude-sync
+npm install -g @tawandotorg/claude-sync
 
 # Set up with SAME storage credentials and SAME passphrase
 claude-sync init
@@ -235,10 +235,10 @@ Claude sessions typically use < 50MB. Syncing is effectively **free** on any pro
 
 ```bash
 # One-time use
-npx claude-sync init
+npx @tawandotorg/claude-sync init
 
 # Global install
-npm install -g claude-sync
+npm install -g @tawandotorg/claude-sync
 ```
 
 ### Go Install
