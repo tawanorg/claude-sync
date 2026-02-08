@@ -242,6 +242,18 @@ npm install -g @tawandotorg/claude-sync
 npx @tawandotorg/claude-sync init
 ```
 
+### GitHub Packages
+
+**Prerequisite:** Node.js 14+
+
+```bash
+# Add to ~/.npmrc
+echo "@tawanorg:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install
+npm install -g @tawanorg/claude-sync
+```
+
 ### Download Binary
 
 **Prerequisite:** None
