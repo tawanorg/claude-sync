@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/tawanorg/claude-sync/compare/v0.5.0...v0.6.0) (2026-02-08)
+
+
+### Features
+
+* add demo gif and logo ([98d2394](https://github.com/tawanorg/claude-sync/commit/98d2394ad4278d884dcdbb27a90253389b8e65ee))
+
 # [0.5.0](https://github.com/tawanorg/claude-sync/compare/v0.4.1...v0.5.0) (2026-02-08)
 
 
