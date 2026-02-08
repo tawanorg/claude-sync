@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/tawanorg/claude-sync/compare/v1.1.0...v1.2.0) (2026-02-08)
+
+
+### Features
+
+* add Claude Code plugin with marketplace support ([0d33f31](https://github.com/tawanorg/claude-sync/commit/0d33f31c71ad68b8610de0d52b87ae25e54fe384))
+
 # [1.1.0](https://github.com/tawanorg/claude-sync/compare/v1.0.0...v1.1.0) (2026-02-08)
 
 
