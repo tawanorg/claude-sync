@@ -51,6 +51,7 @@ func main() {
 		statusCmd(),
 		diffCmd(),
 		conflictsCmd(),
+		resetCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -907,4 +908,110 @@ func showDiff(localPath, conflictPath string) {
 		}
 	}
 	fmt.Println()
+}
+
+func resetCmd() *cobra.Command {
+	var clearRemote, clearLocal, force bool
+
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Reset claude-sync (clear data and start fresh)",
+		Long: `Reset claude-sync configuration and optionally clear remote/local data.
+
+Use this if you forgot your passphrase or want to start fresh.
+
+Examples:
+  claude-sync reset                    # Clear local config only
+  claude-sync reset --remote           # Also delete all files from R2
+  claude-sync reset --local            # Also clear local sync state
+  claude-sync reset --remote --local   # Full reset (nuclear option)`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reader := bufio.NewReader(os.Stdin)
+
+			fmt.Println()
+			printWarning("This will reset claude-sync:")
+			fmt.Println()
+
+			if clearRemote {
+				fmt.Printf("  %s•%s Delete ALL files from R2 bucket\n", colorYellow, colorReset)
+			}
+			if clearLocal {
+				fmt.Printf("  %s•%s Clear local sync state\n", colorYellow, colorReset)
+			}
+			fmt.Printf("  %s•%s Delete local config and encryption key\n", colorYellow, colorReset)
+			fmt.Println()
+
+			if !force {
+				fmt.Printf("%sType 'reset' to confirm:%s ", colorYellow, colorReset)
+				confirm, _ := reader.ReadString('\n')
+				if strings.TrimSpace(confirm) != "reset" {
+					fmt.Println("Aborted.")
+					return nil
+				}
+				fmt.Println()
+			}
+
+			// Clear remote if requested
+			if clearRemote {
+				fmt.Printf("%s⋯%s Deleting remote files...\n", colorDim, colorReset)
+
+				cfg, err := config.Load()
+				if err != nil {
+					printWarning("Could not load config: " + err.Error())
+				} else {
+					r2, err := storage.NewR2Client(cfg)
+					if err != nil {
+						printWarning("Could not connect to R2: " + err.Error())
+					} else {
+						ctx := context.Background()
+						objects, err := r2.List(ctx, "")
+						if err != nil {
+							printWarning("Could not list objects: " + err.Error())
+						} else {
+							deleted := 0
+							for _, obj := range objects {
+								if err := r2.Delete(ctx, obj.Key); err != nil {
+									printWarning("Failed to delete " + obj.Key)
+								} else {
+									deleted++
+								}
+							}
+							printSuccess(fmt.Sprintf("Deleted %d files from R2", deleted))
+						}
+					}
+				}
+			}
+
+			// Clear local state if requested
+			if clearLocal {
+				statePath := config.StateFilePath()
+				if err := os.Remove(statePath); err != nil && !os.IsNotExist(err) {
+					printWarning("Could not remove state file: " + err.Error())
+				} else {
+					printSuccess("Cleared local sync state")
+				}
+			}
+
+			// Always clear config and key
+			configDir := config.ConfigDirPath()
+			if err := os.RemoveAll(configDir); err != nil {
+				return fmt.Errorf("failed to remove config directory: %w", err)
+			}
+			printSuccess("Removed " + configDir)
+
+			fmt.Println()
+			printSuccess("Reset complete!")
+			fmt.Println()
+			printInfo("Run 'claude-sync init' to set up again with a new passphrase.")
+			fmt.Println()
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&clearRemote, "remote", false, "Delete all files from R2 bucket")
+	cmd.Flags().BoolVar(&clearLocal, "local", false, "Clear local sync state")
+	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+
+	return cmd
 }

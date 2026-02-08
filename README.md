@@ -173,10 +173,60 @@ In interactive mode, you can:
 - **[s]** Skip (decide later)
 - **[q]** Quit
 
+## Encryption & Passphrase
+
+### How it works
+
+When you run `claude-sync init`, you choose between:
+
+| Mode | How it works | Pros | Cons |
+|------|-------------|------|------|
+| **Passphrase** | Key derived from passphrase using Argon2 | Same passphrase = same key on any device | Must remember passphrase |
+| **Random key** | Generates random age key | Most secure | Must copy key file to other devices |
+
+The derived/generated key is stored at `~/.claude-sync/age-key.txt`.
+
+### Forgot your passphrase?
+
+**The passphrase is never stored anywhere.** If you forget it:
+
+1. Your encrypted files on R2 **cannot be recovered**
+2. You must reset and start fresh:
+
+```bash
+# Reset everything (deletes R2 files too)
+claude-sync reset --remote
+
+# Set up again with new passphrase
+claude-sync init --passphrase
+```
+
+### Reset command
+
+Use `reset` when you need to start fresh:
+
+```bash
+# Clear local config only
+claude-sync reset
+
+# Also delete all files from R2
+claude-sync reset --remote
+
+# Also clear local sync state
+claude-sync reset --local
+
+# Full reset (nuclear option)
+claude-sync reset --remote --local
+
+# Skip confirmation
+claude-sync reset --remote --force
+```
+
 ## Security
 
 - All files are encrypted with [age](https://github.com/FiloSottile/age) before upload
 - Encryption key never leaves your devices
+- Passphrase is **never stored** - only the derived key
 - R2 bucket is private (API key authentication)
 - Credentials stored with 0600 permissions
 
