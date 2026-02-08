@@ -65,11 +65,8 @@ func main() {
 }
 
 func printBanner() {
-	// Print welcome box
 	fmt.Println()
-	fmt.Printf("  %s┌────────────────────────────────────────────────────┐%s\n", colorDim, colorReset)
-	fmt.Printf("  %s│%s  ✦ Welcome to %sClaude Sync%s                          %s│%s\n", colorDim, colorReset, colorBold, colorReset, colorDim, colorReset)
-	fmt.Printf("  %s└────────────────────────────────────────────────────┘%s\n", colorDim, colorReset)
+	fmt.Printf("  %sWelcome to Claude Sync!%s %sv%s%s\n", colorBold, colorReset, colorDim, version, colorReset)
 	fmt.Println()
 
 	// Block-style ASCII art - CLAUDE SYNC on one line
@@ -82,14 +79,10 @@ func printBanner() {
 	fmt.Println("   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝  ╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝")
 	fmt.Printf("%s\n", colorReset)
 
-	fmt.Printf("  %sSyncing Claude Code sessions across devices%s\n", colorDim, colorReset)
+	fmt.Printf("  %sSync your Claude Code sessions across all your devices.%s\n", colorDim, colorReset)
+	fmt.Println()
 	fmt.Printf("  %sEncrypted with age • Stored on Cloudflare R2%s\n", colorDim, colorReset)
-	fmt.Println()
-	fmt.Printf("  %sv%s%s\n", colorDim, version, colorReset)
-	fmt.Println()
 	fmt.Printf("  %sBuilt with ♥ by @tawanorg%s\n", colorDim, colorReset)
-	fmt.Printf("  %sGitHub: https://github.com/tawanorg/claude-sync%s\n", colorDim, colorReset)
-	fmt.Printf("  %sContributions welcome!%s\n", colorDim, colorReset)
 	fmt.Println()
 }
 
