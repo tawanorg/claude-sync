@@ -1,3 +1,10 @@
+## [0.3.2](https://github.com/tawanorg/claude-sync/compare/v0.3.1...v0.3.2) (2026-02-08)
+
+
+### Bug Fixes
+
+* use git tags for version instead of hardcoded value ([972f0e8](https://github.com/tawanorg/claude-sync/commit/972f0e8da314d47eaff64368c38d80fe5b4a0eca))
+
 ## [0.3.1](https://github.com/tawanorg/claude-sync/compare/v0.3.0...v0.3.1) (2026-02-08)
 
 
