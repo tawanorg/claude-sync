@@ -27,6 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: npm install -g semantic-release @semantic-release/changelog @semantic-release/exec @semantic-release/git
@@ -40,4 +41,18 @@ jobs:
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release
+
+      - name: Publish to npm
+        if: success()
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Get the latest version from package.json or git tag
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$VERSION" ]; then
+            # Update package.json version
+            npm version ${VERSION#v} --no-git-tag-version --allow-same-version
+            npm publish --access public
+          fi
