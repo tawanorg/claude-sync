@@ -1,3 +1,10 @@
+## [0.2.1](https://github.com/tawanorg/claude-sync/compare/v0.2.0...v0.2.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* resolve deprecated API warnings ([f1c9559](https://github.com/tawanorg/claude-sync/commit/f1c955937034fe66449bcc87b1542d9c71c58eb7))
+
 # [0.2.0](https://github.com/tawanorg/claude-sync/compare/v0.1.1...v0.2.0) (2026-02-08)
 
 
