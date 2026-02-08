@@ -65,27 +65,35 @@ func main() {
 }
 
 func printBanner() {
-	banner := `
-   _____ _                 _        _____
-  / ____| |               | |      / ____|
- | |    | | __ _ _   _  __| | ___ | (___  _   _ _ __   ___
- | |    | |/ _` + "`" + ` | | | |/ _` + "`" + ` |/ _ \ \___ \| | | | '_ \ / __|
- | |____| | (_| | |_| | (_| |  __/ ____) | |_| | | | | (__
-  \_____|_|\__,_|\__,_|\__,_|\___||_____/ \__, |_| |_|\___|
-                                           __/ |
-                                          |___/
-`
-	fmt.Print(colorCyan + banner + colorReset)
-	fmt.Printf("  %sWelcome to Claude Sync!%s %sv%s%s\n", colorBold, colorReset, colorDim, version, colorReset)
+	// Print welcome box
 	fmt.Println()
-	fmt.Printf("  %sSync your Claude Code sessions across all your devices.%s\n", colorReset, colorReset)
-	fmt.Printf("  %sEnd-to-end encrypted with age • Stored on Cloudflare R2 (free tier)%s\n", colorDim, colorReset)
+	fmt.Printf("  %s┌────────────────────────────────────────────────────┐%s\n", colorDim, colorReset)
+	fmt.Printf("  %s│%s  ✦ Welcome to %sClaude Sync%s                          %s│%s\n", colorDim, colorReset, colorBold, colorReset, colorDim, colorReset)
+	fmt.Printf("  %s└────────────────────────────────────────────────────┘%s\n", colorDim, colorReset)
 	fmt.Println()
-	fmt.Printf("  %sBuilt with love by @tawanorg%s\n", colorDim, colorReset)
-	fmt.Printf("  %sGitHub: https://github.com/tawanorg/claude-sync%s\n", colorDim, colorReset)
-	fmt.Printf("  %sContributions welcome! Issues, PRs, and feedback appreciated.%s\n", colorDim, colorReset)
+
+	// Block-style ASCII art
+	fmt.Printf("%s", colorCyan)
+	fmt.Println("   ██████╗██╗      █████╗ ██╗   ██╗██████╗ ███████╗")
+	fmt.Println("  ██╔════╝██║     ██╔══██╗██║   ██║██╔══██╗██╔════╝")
+	fmt.Println("  ██║     ██║     ███████║██║   ██║██║  ██║█████╗  ")
+	fmt.Println("  ██║     ██║     ██╔══██║██║   ██║██║  ██║██╔══╝  ")
+	fmt.Println("  ╚██████╗███████╗██║  ██║╚██████╔╝██████╔╝███████╗")
+	fmt.Println("   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝")
 	fmt.Println()
-	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println("  ███████╗██╗   ██╗███╗   ██╗ ██████╗")
+	fmt.Println("  ██╔════╝╚██╗ ██╔╝████╗  ██║██╔════╝")
+	fmt.Println("  ███████╗ ╚████╔╝ ██╔██╗ ██║██║     ")
+	fmt.Println("  ╚════██║  ╚██╔╝  ██║╚██╗██║██║     ")
+	fmt.Println("  ███████║   ██║   ██║ ╚████║╚██████╗")
+	fmt.Println("  ╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝")
+	fmt.Printf("%s\n", colorReset)
+
+	fmt.Printf("  %sSyncing Claude Code sessions across devices%s\n", colorDim, colorReset)
+	fmt.Printf("  %sEncrypted with age • Stored on Cloudflare R2%s\n", colorDim, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sv%s%s\n", colorDim, version, colorReset)
+	fmt.Println()
 }
 
 func printStep(step int, total int, text string) {
