@@ -8,6 +8,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  packages: write
 
 jobs:
   release:
@@ -46,10 +47,28 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Get the latest version from package.json or git tag
+          # Get the latest version from git tag
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -n "$VERSION" ]; then
             # Update package.json version
             npm version ${VERSION#v} --no-git-tag-version --allow-same-version
             npm publish --access public
+          fi
+
+      - name: Publish to GitHub Packages
+        if: success()
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$VERSION" ]; then
+            # Switch to GitHub registry and update scope
+            echo "@tawanorg:registry=https://npm.pkg.github.com" > .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
+
+            # Update package name for GitHub Packages (scope must match owner)
+            sed -i 's/"@tawandotorg\/claude-sync"/"@tawanorg\/claude-sync"/' package.json
+
+            npm version ${VERSION#v} --no-git-tag-version --allow-same-version
+            npm publish
           fi
