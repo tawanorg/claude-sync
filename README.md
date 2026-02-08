@@ -51,8 +51,13 @@ claude-sync push
 # Install
 npm install -g @tawandotorg/claude-sync
 
-# Set up with SAME storage credentials and SAME passphrase
+# Set up with SAME storage credentials
 claude-sync init
+# Select same provider (R2/S3/GCS)
+# Enter same bucket name and credentials
+# Choose "Passphrase" for encryption
+# Enter the SAME passphrase as first device
+# ✓ Encryption key verified  <-- confirms passphrase matches!
 
 # Preview what would be synced
 claude-sync pull --dry-run
@@ -61,7 +66,7 @@ claude-sync pull --dry-run
 claude-sync pull
 ```
 
-**That's it!** Same passphrase = same encryption key. No file copying needed.
+**Same passphrase = same encryption key.** The init verifies your passphrase can decrypt remote files before completing.
 
 ## Setup Guide
 
