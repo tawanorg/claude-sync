@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/tawanorg/claude-sync/compare/v0.6.0...v0.6.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* skip npm publish if version already exists ([e5dca87](https://github.com/tawanorg/claude-sync/commit/e5dca8735372fca820bf28d943a769571f15a89d))
+
 # [0.6.0](https://github.com/tawanorg/claude-sync/compare/v0.5.0...v0.6.0) (2026-02-08)
 
 
