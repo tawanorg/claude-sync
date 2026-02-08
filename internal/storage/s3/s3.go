@@ -1,59 +1,62 @@
-package storage
+package s3
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	appconfig "github.com/tawanorg/claude-sync/internal/config"
+	"github.com/tawanorg/claude-sync/internal/storage"
 )
 
-type R2Client struct {
+func init() {
+	storage.NewS3 = New
+}
+
+// Client implements the storage.Storage interface for AWS S3
+type Client struct {
 	client *s3.Client
 	bucket string
 }
 
-type ObjectInfo struct {
-	Key          string
-	Size         int64
-	LastModified time.Time
-	ETag         string
-}
-
-func NewR2Client(cfg *appconfig.Config) (*R2Client, error) {
+// New creates a new S3 storage client
+func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.AccessKeyID,
 			cfg.SecretAccessKey,
 			"",
 		)),
-		config.WithRegion("auto"),
+		config.WithRegion(cfg.Region),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(cfg.Endpoint)
-	})
+	var client *s3.Client
+	if cfg.Endpoint != "" {
+		client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+		})
+	} else {
+		client = s3.NewFromConfig(awsCfg)
+	}
 
-	return &R2Client{
+	return &Client{
 		client: client,
 		bucket: cfg.Bucket,
 	}, nil
 }
 
-func (r *R2Client) Upload(ctx context.Context, key string, data []byte) error {
-	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(r.bucket),
+// Upload stores data with the given key
+func (c *Client) Upload(ctx context.Context, key string, data []byte) error {
+	_, err := c.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(c.bucket),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
 		ContentType: aws.String("application/octet-stream"),
@@ -64,9 +67,10 @@ func (r *R2Client) Upload(ctx context.Context, key string, data []byte) error {
 	return nil
 }
 
-func (r *R2Client) Download(ctx context.Context, key string) ([]byte, error) {
-	result, err := r.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(r.bucket),
+// Download retrieves data for the given key
+func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
+	result, err := c.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -82,9 +86,10 @@ func (r *R2Client) Download(ctx context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
-func (r *R2Client) Delete(ctx context.Context, key string) error {
-	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(r.bucket),
+// Delete removes the object with the given key
+func (c *Client) Delete(ctx context.Context, key string) error {
+	_, err := c.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -93,26 +98,27 @@ func (r *R2Client) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (r *R2Client) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
-	var objects []ObjectInfo
+// List returns all objects with the given prefix
+func (c *Client) List(ctx context.Context, prefix string) ([]storage.ObjectInfo, error) {
+	var objects []storage.ObjectInfo
 	var continuationToken *string
 
 	for {
 		input := &s3.ListObjectsV2Input{
-			Bucket:            aws.String(r.bucket),
+			Bucket:            aws.String(c.bucket),
 			ContinuationToken: continuationToken,
 		}
 		if prefix != "" {
 			input.Prefix = aws.String(prefix)
 		}
 
-		result, err := r.client.ListObjectsV2(ctx, input)
+		result, err := c.client.ListObjectsV2(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list objects: %w", err)
 		}
 
 		for _, obj := range result.Contents {
-			objects = append(objects, ObjectInfo{
+			objects = append(objects, storage.ObjectInfo{
 				Key:          aws.ToString(obj.Key),
 				Size:         aws.ToInt64(obj.Size),
 				LastModified: aws.ToTime(obj.LastModified),
@@ -129,16 +135,17 @@ func (r *R2Client) List(ctx context.Context, prefix string) ([]ObjectInfo, error
 	return objects, nil
 }
 
-func (r *R2Client) Head(ctx context.Context, key string) (*ObjectInfo, error) {
-	result, err := r.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(r.bucket),
+// Head returns metadata for the given key without downloading content
+func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, error) {
+	result, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &ObjectInfo{
+	return &storage.ObjectInfo{
 		Key:          key,
 		Size:         aws.ToInt64(result.ContentLength),
 		LastModified: aws.ToTime(result.LastModified),
@@ -146,22 +153,10 @@ func (r *R2Client) Head(ctx context.Context, key string) (*ObjectInfo, error) {
 	}, nil
 }
 
-func (r *R2Client) CreateBucket(ctx context.Context) error {
-	_, err := r.client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: aws.String(r.bucket),
-		CreateBucketConfiguration: &types.CreateBucketConfiguration{
-			LocationConstraint: types.BucketLocationConstraintUsWest2,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create bucket: %w", err)
-	}
-	return nil
-}
-
-func (r *R2Client) BucketExists(ctx context.Context) (bool, error) {
-	_, err := r.client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(r.bucket),
+// BucketExists checks if the configured bucket exists
+func (c *Client) BucketExists(ctx context.Context) (bool, error) {
+	_, err := c.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(c.bucket),
 	})
 	if err != nil {
 		return false, nil

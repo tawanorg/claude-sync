@@ -11,10 +11,15 @@ import (
 	"github.com/tawanorg/claude-sync/internal/config"
 	"github.com/tawanorg/claude-sync/internal/crypto"
 	"github.com/tawanorg/claude-sync/internal/storage"
+
+	// Register storage adapters
+	_ "github.com/tawanorg/claude-sync/internal/storage/gcs"
+	_ "github.com/tawanorg/claude-sync/internal/storage/r2"
+	_ "github.com/tawanorg/claude-sync/internal/storage/s3"
 )
 
 type Syncer struct {
-	r2         *storage.R2Client
+	storage    storage.Storage
 	encryptor  *crypto.Encryptor
 	state      *SyncState
 	claudeDir  string
@@ -43,9 +48,10 @@ type ProgressEvent struct {
 type ProgressFunc func(event ProgressEvent)
 
 func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
-	r2, err := storage.NewR2Client(cfg)
+	storageCfg := cfg.GetStorageConfig()
+	store, err := storage.New(storageCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create R2 client: %w", err)
+		return nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
 
 	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
@@ -59,7 +65,7 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	}
 
 	return &Syncer{
-		r2:        r2,
+		storage:   store,
 		encryptor: enc,
 		state:     state,
 		claudeDir: config.ClaudeDir(),
@@ -130,7 +136,7 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 			})
 
 			remoteKey := s.remoteKey(change.Path)
-			if err := s.r2.Delete(ctx, remoteKey); err != nil {
+			if err := s.storage.Delete(ctx, remoteKey); err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("delete %s: %w", change.Path, err))
 				continue
 			}
@@ -156,7 +162,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	s.progress(ProgressEvent{Action: "scan", Path: "Fetching remote file list..."})
 
 	// List all remote objects
-	remoteObjects, err := s.r2.List(ctx, "")
+	remoteObjects, err := s.storage.List(ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote objects: %w", err)
 	}
@@ -282,7 +288,7 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 
 	// Upload
 	remoteKey := s.remoteKey(relativePath)
-	if err := s.r2.Upload(ctx, remoteKey, encrypted); err != nil {
+	if err := s.storage.Upload(ctx, remoteKey, encrypted); err != nil {
 		return fmt.Errorf("failed to upload: %w", err)
 	}
 
@@ -297,7 +303,7 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 
 func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey string) error {
 	// Download
-	encrypted, err := s.r2.Download(ctx, remoteKey)
+	encrypted, err := s.storage.Download(ctx, remoteKey)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
@@ -374,7 +380,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 	}
 
 	// Get remote files
-	remoteObjects, err := s.r2.List(ctx, "")
+	remoteObjects, err := s.storage.List(ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote objects: %w", err)
 	}

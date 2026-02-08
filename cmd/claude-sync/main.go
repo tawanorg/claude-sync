@@ -15,12 +15,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/tawanorg/claude-sync/internal/config"
 	"github.com/tawanorg/claude-sync/internal/crypto"
 	"github.com/tawanorg/claude-sync/internal/storage"
 	"github.com/tawanorg/claude-sync/internal/sync"
+
+	// Register storage adapters
+	_ "github.com/tawanorg/claude-sync/internal/storage/gcs"
+	_ "github.com/tawanorg/claude-sync/internal/storage/r2"
+	_ "github.com/tawanorg/claude-sync/internal/storage/s3"
 )
 
 var (
@@ -42,7 +48,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:     "claude-sync",
 		Short:   "Sync Claude Code sessions across devices",
-		Long:    `A CLI tool to sync your ~/.claude directory across devices using Cloudflare R2 with encryption.`,
+		Long:    `A CLI tool to sync your ~/.claude directory across devices using cloud storage with encryption.`,
 		Version: version,
 	}
 
@@ -81,7 +87,7 @@ func printBanner() {
 
 	fmt.Printf("  %sSync your Claude Code sessions across all your devices.%s\n", colorDim, colorReset)
 	fmt.Println()
-	fmt.Printf("  %sEncrypted with age • Stored on Cloudflare R2%s\n", colorDim, colorReset)
+	fmt.Printf("  %sEncrypted with age • R2 / S3 / GCS supported%s\n", colorDim, colorReset)
 	fmt.Printf("  %sBuilt with ♥ by @tawanorg%s\n", colorDim, colorReset)
 	fmt.Println()
 }
@@ -117,60 +123,94 @@ func promptInput(reader *bufio.Reader, prompt string, defaultVal string) string 
 }
 
 func initCmd() *cobra.Command {
-	var accountID, accessKey, secretKey, bucket string
+	var provider, bucket string
 	var usePassphrase bool
+
+	// R2 flags
+	var accountID, accessKey, secretKey string
+
+	// S3 flags
+	var s3Region string
+
+	// GCS flags
+	var gcsProjectID, gcsCredentialsFile string
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize claude-sync configuration",
-		Long: `Set up Cloudflare R2 credentials and generate encryption keys.
+		Long: `Set up cloud storage credentials and generate encryption keys.
+
+Supported providers:
+  - r2:  Cloudflare R2 (S3-compatible, free tier: 10GB)
+  - s3:  Amazon S3
+  - gcs: Google Cloud Storage
 
 Use --passphrase to derive the key from a memorable passphrase - same
 passphrase on any device produces the same key, no file copying needed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reader := bufio.NewReader(os.Stdin)
-
 			// Show banner
 			printBanner()
 
 			if config.Exists() {
-				printWarning("Configuration already exists at " + config.ConfigFilePath())
-				fmt.Print("      Overwrite? [y/N]: ")
-				answer, _ := reader.ReadString('\n')
-				answer = strings.TrimSpace(strings.ToLower(answer))
-				if answer != "y" && answer != "yes" {
-					fmt.Println("      Aborted.")
+				var overwrite bool
+				prompt := &survey.Confirm{
+					Message: "Configuration already exists. Overwrite?",
+					Default: false,
+				}
+				if err := survey.AskOne(prompt, &overwrite); err != nil || !overwrite {
+					fmt.Println("  Aborted.")
 					return nil
 				}
 				fmt.Println()
 			}
 
-			// Step 1: Show how to get R2 credentials
-			printStep(1, 3, "Get R2 Credentials")
-			fmt.Println()
-			printInfo("You need a Cloudflare R2 bucket and API token.")
-			printInfo("R2 free tier includes 10GB storage.")
-			fmt.Println()
-			fmt.Printf("  %s1.%s Create bucket: %shttps://dash.cloudflare.com/?to=/:account/r2/new%s\n",
-				colorCyan, colorReset, colorDim, colorReset)
-			fmt.Printf("  %s2.%s Create API token: %shttps://dash.cloudflare.com/?to=/:account/r2/api-tokens%s\n",
-				colorCyan, colorReset, colorDim, colorReset)
-			printInfo("   Select 'Object Read & Write' permission")
+			// Step 1: Select provider
+			printStep(1, 3, "Select Storage Provider")
 			fmt.Println()
 
-			// Prompt for credentials
-			if accountID == "" {
-				printInfo("Account ID is in URL: dash.cloudflare.com/<ACCOUNT_ID>/r2")
-				accountID = promptInput(reader, "Account ID", "")
+			if provider == "" {
+				prompt := &survey.Select{
+					Message: "Choose your cloud storage provider:",
+					Options: []string{
+						"Cloudflare R2 (recommended - free tier: 10GB)",
+						"Amazon S3",
+						"Google Cloud Storage",
+					},
+				}
+				var choice int
+				if err := survey.AskOne(prompt, &choice); err != nil {
+					return err
+				}
+				switch choice {
+				case 0:
+					provider = "r2"
+				case 1:
+					provider = "s3"
+				case 2:
+					provider = "gcs"
+				}
 			}
-			if accessKey == "" {
-				accessKey = promptInput(reader, "Access Key ID", "")
+
+			var storageCfg *storage.StorageConfig
+			var err error
+			fmt.Println()
+
+			switch provider {
+			case "r2":
+				storageCfg, err = runR2Wizard(accountID, accessKey, secretKey, bucket)
+			case "s3":
+				storageCfg, err = runS3Wizard(accessKey, secretKey, s3Region, bucket)
+			case "gcs":
+				storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
+			default:
+				return fmt.Errorf("unsupported provider: %s", provider)
 			}
-			if secretKey == "" {
-				secretKey = promptInput(reader, "Secret Access Key", "")
+
+			if err != nil {
+				return err
 			}
-			if bucket == "" {
-				bucket = promptInput(reader, "Bucket name", "claude-sync")
+			if storageCfg == nil {
+				return fmt.Errorf("setup cancelled")
 			}
 
 			// Step 2: Encryption setup
@@ -188,21 +228,29 @@ passphrase on any device produces the same key, no file copying needed.`,
 
 			// Check if we should use passphrase mode
 			if !usePassphrase && !crypto.KeyExists(keyPath) {
-				fmt.Printf("  %s[1]%s Passphrase %s(recommended)%s - same key on all devices\n",
-					colorCyan, colorReset, colorGreen, colorReset)
-				fmt.Printf("  %s[2]%s Random key - must copy key file to other devices\n",
-					colorCyan, colorReset)
-				fmt.Println()
-				choice := promptInput(reader, "Choice", "1")
-				usePassphrase = choice == "1"
+				prompt := &survey.Select{
+					Message: "Choose encryption key method:",
+					Options: []string{
+						"Passphrase (recommended) - same key on all devices",
+						"Random key - must copy key file to other devices",
+					},
+				}
+				var choice int
+				if err := survey.AskOne(prompt, &choice); err != nil {
+					return err
+				}
+				usePassphrase = choice == 0
 				fmt.Println()
 			}
 
 			if usePassphrase {
 				if crypto.KeyExists(keyPath) {
-					printWarning("Encryption key exists. Overwrite? [y/N]")
-					confirm := promptInput(reader, "", "n")
-					if strings.ToLower(confirm) != "y" {
+					var overwriteKey bool
+					prompt := &survey.Confirm{
+						Message: "Encryption key already exists. Overwrite?",
+						Default: false,
+					}
+					if err := survey.AskOne(prompt, &overwriteKey); err != nil || !overwriteKey {
 						printSuccess("Using existing key")
 						goto skipKeyGen
 					}
@@ -211,18 +259,27 @@ passphrase on any device produces the same key, no file copying needed.`,
 				printInfo("Use the SAME passphrase on all devices.")
 				var passphrase string
 				for {
-					fmt.Printf("      Passphrase (min 8 chars): ")
-					passBytes, _ := reader.ReadString('\n')
-					passphrase = strings.TrimSpace(passBytes)
+					prompt := &survey.Password{
+						Message: "Passphrase (min 8 chars):",
+					}
+					if err := survey.AskOne(prompt, &passphrase); err != nil {
+						return err
+					}
 
 					if err := crypto.ValidatePassphraseStrength(passphrase); err != nil {
 						printWarning(err.Error())
 						continue
 					}
 
-					fmt.Printf("      Confirm: ")
-					confirmBytes, _ := reader.ReadString('\n')
-					if passphrase != strings.TrimSpace(confirmBytes) {
+					var confirm string
+					confirmPrompt := &survey.Password{
+						Message: "Confirm passphrase:",
+					}
+					if err := survey.AskOne(confirmPrompt, &confirm); err != nil {
+						return err
+					}
+
+					if passphrase != confirm {
 						printWarning("Passphrases don't match.")
 						continue
 					}
@@ -245,37 +302,43 @@ passphrase on any device produces the same key, no file copying needed.`,
 			}
 		skipKeyGen:
 
-			// Save config
-			cfg := &config.Config{
-				AccountID:       accountID,
-				AccessKeyID:     accessKey,
-				SecretAccessKey: secretKey,
-				Bucket:          bucket,
-				EncryptionKey:   "~/.claude-sync/age-key.txt",
-			}
-
-			if err := config.Save(cfg); err != nil {
-				return err
-			}
-
 			// Step 3: Test Connection
 			fmt.Println()
 			printStep(3, 3, "Test Connection")
 
-			cfg.Endpoint = fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
-			r2, err := storage.NewR2Client(cfg)
+			store, err := storage.New(storageCfg)
 			if err != nil {
-				return fmt.Errorf("failed to create R2 client: %w", err)
+				// Provide helpful error messages for common issues
+				if strings.Contains(err.Error(), "could not find default credentials") {
+					printWarning("GCS Application Default Credentials not configured.")
+					fmt.Println()
+					printInfo("To set up ADC, run:")
+					fmt.Printf("  %sgcloud auth application-default login%s\n", colorCyan, colorReset)
+					fmt.Println()
+					printInfo("Or use a service account JSON file instead.")
+					return fmt.Errorf("GCS credentials not configured")
+				}
+				return fmt.Errorf("failed to create storage client: %w", err)
 			}
 
 			ctx := context.Background()
-			exists, err := r2.BucketExists(ctx)
+			exists, err := store.BucketExists(ctx)
 			if err != nil {
 				printWarning("Could not verify bucket: " + err.Error())
 			} else if exists {
-				printSuccess("Connected to '" + bucket + "'")
+				printSuccess("Connected to '" + storageCfg.Bucket + "'")
 			} else {
-				printWarning("Bucket '" + bucket + "' not found")
+				printWarning("Bucket '" + storageCfg.Bucket + "' not found")
+			}
+
+			// Save config only after successful connection test
+			cfg := &config.Config{
+				Storage:       storageCfg,
+				EncryptionKey: "~/.claude-sync/age-key.txt",
+			}
+
+			if err := config.Save(cfg); err != nil {
+				return err
 			}
 
 			// Done
@@ -290,20 +353,292 @@ passphrase on any device produces the same key, no file copying needed.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&accountID, "account-id", "", "Cloudflare Account ID")
-	cmd.Flags().StringVar(&accessKey, "access-key", "", "R2 Access Key ID")
-	cmd.Flags().StringVar(&secretKey, "secret-key", "", "R2 Secret Access Key")
-	cmd.Flags().StringVar(&bucket, "bucket", "", "R2 Bucket Name")
+	// Provider selection
+	cmd.Flags().StringVar(&provider, "provider", "", "Storage provider: r2, s3, or gcs")
+	cmd.Flags().StringVar(&bucket, "bucket", "", "Bucket name")
 	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase")
 
+	// R2 flags
+	cmd.Flags().StringVar(&accountID, "account-id", "", "Cloudflare Account ID (R2)")
+	cmd.Flags().StringVar(&accessKey, "access-key", "", "Access Key ID (R2/S3)")
+	cmd.Flags().StringVar(&secretKey, "secret-key", "", "Secret Access Key (R2/S3)")
+
+	// S3 flags
+	cmd.Flags().StringVar(&s3Region, "region", "", "AWS Region (S3)")
+
+	// GCS flags
+	cmd.Flags().StringVar(&gcsProjectID, "project-id", "", "GCP Project ID (GCS)")
+	cmd.Flags().StringVar(&gcsCredentialsFile, "credentials-file", "", "Path to GCS credentials JSON file")
+
 	return cmd
+}
+
+func runR2Wizard(accountID, accessKey, secretKey, bucket string) (*storage.StorageConfig, error) {
+	fmt.Printf("  %sCloudflare R2 Setup%s\n\n", colorBold, colorReset)
+	printInfo("You need a Cloudflare R2 bucket and API token.")
+	printInfo("R2 free tier includes 10GB storage.")
+	fmt.Println()
+	fmt.Printf("  %s1.%s Create bucket: %shttps://dash.cloudflare.com/?to=/:account/r2/new%s\n",
+		colorCyan, colorReset, colorDim, colorReset)
+	fmt.Printf("  %s2.%s Create API token: %shttps://dash.cloudflare.com/?to=/:account/r2/api-tokens%s\n",
+		colorCyan, colorReset, colorDim, colorReset)
+	printInfo("   Select 'Object Read & Write' permission")
+	fmt.Println()
+
+	answers := struct {
+		AccountID string
+		AccessKey string
+		SecretKey string
+		Bucket    string
+	}{
+		AccountID: accountID,
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+		Bucket:    bucket,
+	}
+
+	questions := []*survey.Question{
+		{
+			Name: "AccountID",
+			Prompt: &survey.Input{
+				Message: "Account ID:",
+				Help:    "Found in URL: dash.cloudflare.com/<ACCOUNT_ID>/r2",
+				Default: accountID,
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "AccessKey",
+			Prompt: &survey.Input{
+				Message: "Access Key ID:",
+				Default: accessKey,
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "SecretKey",
+			Prompt: &survey.Password{
+				Message: "Secret Access Key:",
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "Bucket",
+			Prompt: &survey.Input{
+				Message: "Bucket name:",
+				Default: "claude-sync",
+			},
+			Validate: survey.Required,
+		},
+	}
+
+	if err := survey.Ask(questions, &answers); err != nil {
+		return nil, err
+	}
+
+	return &storage.StorageConfig{
+		Provider:        storage.ProviderR2,
+		Bucket:          answers.Bucket,
+		AccountID:       answers.AccountID,
+		AccessKeyID:     answers.AccessKey,
+		SecretAccessKey: answers.SecretKey,
+	}, nil
+}
+
+func runS3Wizard(accessKey, secretKey, region, bucket string) (*storage.StorageConfig, error) {
+	fmt.Printf("  %sAmazon S3 Setup%s\n\n", colorBold, colorReset)
+	printInfo("You need an AWS S3 bucket and IAM credentials.")
+	fmt.Println()
+	fmt.Printf("  %s1.%s Create bucket: %shttps://s3.console.aws.amazon.com/s3/bucket/create%s\n",
+		colorCyan, colorReset, colorDim, colorReset)
+	fmt.Printf("  %s2.%s Create access keys: %shttps://console.aws.amazon.com/iam/home#/security_credentials%s\n",
+		colorCyan, colorReset, colorDim, colorReset)
+	fmt.Println()
+
+	answers := struct {
+		AccessKey string
+		SecretKey string
+		Region    string
+		Bucket    string
+	}{
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+		Region:    region,
+		Bucket:    bucket,
+	}
+
+	questions := []*survey.Question{
+		{
+			Name: "AccessKey",
+			Prompt: &survey.Input{
+				Message: "Access Key ID:",
+				Default: accessKey,
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "SecretKey",
+			Prompt: &survey.Password{
+				Message: "Secret Access Key:",
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "Region",
+			Prompt: &survey.Select{
+				Message: "AWS Region:",
+				Options: []string{
+					"us-east-1",
+					"us-east-2",
+					"us-west-1",
+					"us-west-2",
+					"eu-west-1",
+					"eu-west-2",
+					"eu-central-1",
+					"ap-northeast-1",
+					"ap-southeast-1",
+					"ap-southeast-2",
+				},
+				Default: "us-east-1",
+				Description: func(value string, index int) string {
+					descriptions := map[string]string{
+						"us-east-1":      "US East (N. Virginia)",
+						"us-east-2":      "US East (Ohio)",
+						"us-west-1":      "US West (N. California)",
+						"us-west-2":      "US West (Oregon)",
+						"eu-west-1":      "Europe (Ireland)",
+						"eu-west-2":      "Europe (London)",
+						"eu-central-1":   "Europe (Frankfurt)",
+						"ap-northeast-1": "Asia Pacific (Tokyo)",
+						"ap-southeast-1": "Asia Pacific (Singapore)",
+						"ap-southeast-2": "Asia Pacific (Sydney)",
+					}
+					return descriptions[value]
+				},
+			},
+		},
+		{
+			Name: "Bucket",
+			Prompt: &survey.Input{
+				Message: "Bucket name:",
+				Default: "claude-sync",
+			},
+			Validate: survey.Required,
+		},
+	}
+
+	if err := survey.Ask(questions, &answers); err != nil {
+		return nil, err
+	}
+
+	return &storage.StorageConfig{
+		Provider:        storage.ProviderS3,
+		Bucket:          answers.Bucket,
+		AccessKeyID:     answers.AccessKey,
+		SecretAccessKey: answers.SecretKey,
+		Region:          answers.Region,
+	}, nil
+}
+
+func runGCSWizard(projectID, credentialsFile, bucket string) (*storage.StorageConfig, error) {
+	fmt.Printf("  %sGoogle Cloud Storage Setup%s\n\n", colorBold, colorReset)
+	printInfo("You need a GCS bucket and service account credentials.")
+	fmt.Println()
+	fmt.Printf("  %s1.%s Create bucket: %shttps://console.cloud.google.com/storage/create-bucket%s\n",
+		colorCyan, colorReset, colorDim, colorReset)
+	fmt.Printf("  %s2.%s Create service account: %shttps://console.cloud.google.com/iam-admin/serviceaccounts%s\n",
+		colorCyan, colorReset, colorDim, colorReset)
+	printInfo("   Grant 'Storage Object Admin' role to the service account")
+	fmt.Println()
+
+	answers := struct {
+		ProjectID  string
+		AuthMethod string
+		Bucket     string
+	}{
+		ProjectID: projectID,
+		Bucket:    bucket,
+	}
+
+	questions := []*survey.Question{
+		{
+			Name: "ProjectID",
+			Prompt: &survey.Input{
+				Message: "GCP Project ID:",
+				Default: projectID,
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "AuthMethod",
+			Prompt: &survey.Select{
+				Message: "Authentication method:",
+				Options: []string{
+					"Application Default Credentials (requires: gcloud auth application-default login)",
+					"Service Account JSON file",
+				},
+			},
+		},
+		{
+			Name: "Bucket",
+			Prompt: &survey.Input{
+				Message: "Bucket name:",
+				Default: "claude-sync",
+			},
+			Validate: survey.Required,
+		},
+	}
+
+	if err := survey.Ask(questions, &answers); err != nil {
+		return nil, err
+	}
+
+	cfg := &storage.StorageConfig{
+		Provider:  storage.ProviderGCS,
+		Bucket:    answers.Bucket,
+		ProjectID: answers.ProjectID,
+	}
+
+	if strings.Contains(answers.AuthMethod, "Service Account") {
+		var credPath string
+		prompt := &survey.Input{
+			Message: "Credentials JSON file path:",
+			Help:    "Path to your service account JSON key file",
+			Suggest: func(toComplete string) []string {
+				files, _ := filepath.Glob(toComplete + "*")
+				return files
+			},
+		}
+		if err := survey.AskOne(prompt, &credPath, survey.WithValidator(func(ans interface{}) error {
+			path := ans.(string)
+			if path == "" {
+				return fmt.Errorf("credentials file path is required")
+			}
+			// Expand ~ in path
+			if len(path) > 0 && path[0] == '~' {
+				home, _ := os.UserHomeDir()
+				path = home + path[1:]
+			}
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				return fmt.Errorf("file does not exist: %s", path)
+			}
+			return nil
+		})); err != nil {
+			return nil, err
+		}
+		cfg.CredentialsFile = credPath
+	} else {
+		cfg.UseDefaultCredentials = true
+	}
+
+	return cfg, nil
 }
 
 func pushCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "push",
-		Short: "Upload local changes to R2",
-		Long:  `Encrypt and upload changed files from ~/.claude to Cloudflare R2.`,
+		Short: "Upload local changes to cloud storage",
+		Long:  `Encrypt and upload changed files from ~/.claude to cloud storage.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -404,8 +739,8 @@ func truncatePath(path string, maxLen int) string {
 func pullCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pull",
-		Short: "Download remote changes from R2",
-		Long:  `Download and decrypt changed files from Cloudflare R2 to ~/.claude.`,
+		Short: "Download remote changes from cloud storage",
+		Long:  `Download and decrypt changed files from cloud storage to ~/.claude.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -583,7 +918,7 @@ func diffCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff",
 		Short: "Show differences between local and remote",
-		Long:  `Compare local ~/.claude with remote R2 storage.`,
+		Long:  `Compare local ~/.claude with remote cloud storage.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -925,7 +1260,7 @@ Use this if you forgot your passphrase or want to start fresh.
 
 Examples:
   claude-sync reset                    # Clear local config only
-  claude-sync reset --remote           # Also delete all files from R2
+  claude-sync reset --remote           # Also delete all files from cloud storage
   claude-sync reset --local            # Also clear local sync state
   claude-sync reset --remote --local   # Full reset (nuclear option)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -936,7 +1271,7 @@ Examples:
 			fmt.Println()
 
 			if clearRemote {
-				fmt.Printf("  %s•%s Delete ALL files from R2 bucket\n", colorYellow, colorReset)
+				fmt.Printf("  %s•%s Delete ALL files from cloud storage bucket\n", colorYellow, colorReset)
 			}
 			if clearLocal {
 				fmt.Printf("  %s•%s Clear local sync state\n", colorYellow, colorReset)
@@ -962,24 +1297,25 @@ Examples:
 				if err != nil {
 					printWarning("Could not load config: " + err.Error())
 				} else {
-					r2, err := storage.NewR2Client(cfg)
+					storageCfg := cfg.GetStorageConfig()
+					store, err := storage.New(storageCfg)
 					if err != nil {
-						printWarning("Could not connect to R2: " + err.Error())
+						printWarning("Could not connect to storage: " + err.Error())
 					} else {
 						ctx := context.Background()
-						objects, err := r2.List(ctx, "")
+						objects, err := store.List(ctx, "")
 						if err != nil {
 							printWarning("Could not list objects: " + err.Error())
 						} else {
 							deleted := 0
 							for _, obj := range objects {
-								if err := r2.Delete(ctx, obj.Key); err != nil {
+								if err := store.Delete(ctx, obj.Key); err != nil {
 									printWarning("Failed to delete " + obj.Key)
 								} else {
 									deleted++
 								}
 							}
-							printSuccess(fmt.Sprintf("Deleted %d files from R2", deleted))
+							printSuccess(fmt.Sprintf("Deleted %d files from storage", deleted))
 						}
 					}
 				}
@@ -1012,7 +1348,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().BoolVar(&clearRemote, "remote", false, "Delete all files from R2 bucket")
+	cmd.Flags().BoolVar(&clearRemote, "remote", false, "Delete all files from cloud storage bucket")
 	cmd.Flags().BoolVar(&clearLocal, "local", false, "Clear local sync state")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
 

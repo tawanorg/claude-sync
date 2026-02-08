@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tawanorg/claude-sync/internal/storage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,12 +17,18 @@ const (
 )
 
 type Config struct {
-	AccountID       string `yaml:"account_id"`
-	AccessKeyID     string `yaml:"access_key_id"`
-	SecretAccessKey string `yaml:"secret_access_key"`
-	Bucket          string `yaml:"bucket"`
-	EncryptionKey   string `yaml:"encryption_key_path"`
+	// New storage configuration (preferred)
+	Storage *storage.StorageConfig `yaml:"storage,omitempty"`
+
+	// Legacy R2-only fields (for backward compatibility)
+	AccountID       string `yaml:"account_id,omitempty"`
+	AccessKeyID     string `yaml:"access_key_id,omitempty"`
+	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
+	Bucket          string `yaml:"bucket,omitempty"`
 	Endpoint        string `yaml:"endpoint,omitempty"`
+
+	// Common fields
+	EncryptionKey string `yaml:"encryption_key_path"`
 }
 
 // SyncPaths defines which paths under ~/.claude to sync
@@ -117,4 +124,27 @@ func Save(cfg *Config) error {
 func Exists() bool {
 	_, err := os.Stat(ConfigFilePath())
 	return err == nil
+}
+
+// GetStorageConfig returns the storage configuration, migrating from legacy format if needed
+func (c *Config) GetStorageConfig() *storage.StorageConfig {
+	// If new format is already configured, use it
+	if c.Storage != nil && c.Storage.Provider != "" {
+		return c.Storage
+	}
+
+	// Migrate from legacy R2 format
+	return &storage.StorageConfig{
+		Provider:        storage.ProviderR2,
+		Bucket:          c.Bucket,
+		AccountID:       c.AccountID,
+		AccessKeyID:     c.AccessKeyID,
+		SecretAccessKey: c.SecretAccessKey,
+		Endpoint:        c.Endpoint,
+	}
+}
+
+// IsLegacyConfig returns true if using the legacy R2-only config format
+func (c *Config) IsLegacyConfig() bool {
+	return c.Storage == nil && c.AccountID != ""
 }
