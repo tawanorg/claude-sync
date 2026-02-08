@@ -1,3 +1,16 @@
+# [0.4.0](https://github.com/tawanorg/claude-sync/compare/v0.3.2...v0.4.0) (2026-02-08)
+
+
+### Bug Fixes
+
+* remove unused promptInput function ([0cf28ee](https://github.com/tawanorg/claude-sync/commit/0cf28eeca5a340e85c0ece250fa26a3db75c3cea))
+
+
+### Features
+
+* add multi-provider storage support (R2, S3, GCS) ([ded6fe8](https://github.com/tawanorg/claude-sync/commit/ded6fe8937dce96c77cba4cac9d904728047b5c1))
+* add npm package for easy installation ([2e3c62f](https://github.com/tawanorg/claude-sync/commit/2e3c62f08e32a8b8171a0a27d6e0cc7d9410156a))
+
 ## [0.3.2](https://github.com/tawanorg/claude-sync/compare/v0.3.1...v0.3.2) (2026-02-08)
 
 
