@@ -1,0 +1,37 @@
+# Source code (Go)
+*.go
+go.mod
+go.sum
+cmd/
+internal/
+
+# Build artifacts
+bin/claude-sync
+bin/claude-sync.exe
+bin/claude-sync-*
+
+# Development
+.git/
+.github/
+.gitignore
+.golangci.yml
+Makefile
+assets/
+docs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test files
+*_test.go
+testdata/
+
+# Keep these
+!bin/claude-sync.js
+!install.js
+!package.json
+!README.md
+!LICENSE

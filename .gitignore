@@ -1,5 +1,7 @@
-# Binaries
-bin/
+# Binaries (but keep npm wrapper)
+bin/claude-sync
+bin/claude-sync.exe
+bin/claude-sync-*
 *.exe
 *.exe~
 *.dll
@@ -14,6 +16,7 @@ bin/
 
 # Dependency directories
 vendor/
+node_modules/
 
 # IDE
 .idea/

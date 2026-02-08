@@ -31,10 +31,11 @@
 ### First Device
 
 ```bash
-# Install
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+# Install (pick one)
+npm install -g claude-sync
+# or: go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 
-# Set up (interactive)
+# Set up (interactive wizard)
 claude-sync init
 
 # Push your sessions
@@ -45,7 +46,7 @@ claude-sync push
 
 ```bash
 # Install
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+npm install -g claude-sync
 
 # Set up with SAME storage credentials and SAME passphrase
 claude-sync init
@@ -230,7 +231,17 @@ Claude sessions typically use < 50MB. Syncing is effectively **free** on any pro
 
 ## Installation Options
 
-### From Source (recommended)
+### npm (recommended)
+
+```bash
+# One-time use
+npx claude-sync init
+
+# Global install
+npm install -g claude-sync
+```
+
+### Go Install
 
 ```bash
 go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest

@@ -1,0 +1,45 @@
+{
+  "name": "claude-sync",
+  "version": "0.4.0",
+  "description": "Sync Claude Code sessions across devices with encrypted cloud storage",
+  "bin": {
+    "claude-sync": "./bin/claude-sync.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "sync",
+    "cli",
+    "anthropic",
+    "ai",
+    "r2",
+    "s3",
+    "gcs",
+    "encryption"
+  ],
+  "author": "tawanorg",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tawanorg/claude-sync.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tawanorg/claude-sync/issues"
+  },
+  "homepage": "https://github.com/tawanorg/claude-sync#readme",
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
