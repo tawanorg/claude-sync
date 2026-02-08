@@ -44,19 +44,26 @@ jobs:
 
       - name: Publish to npm
         if: success()
+        continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Get the latest version from git tag
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -n "$VERSION" ]; then
-            # Update package.json version
+            # Check if version already published
+            PUBLISHED=$(npm view @tawandotorg/claude-sync version 2>/dev/null || echo "")
+            if [ "${VERSION#v}" = "$PUBLISHED" ]; then
+              echo "Version ${VERSION#v} already published to npm, skipping"
+              exit 0
+            fi
             npm version ${VERSION#v} --no-git-tag-version --allow-same-version
             npm publish --access public
           fi
 
       - name: Publish to GitHub Packages
         if: success()
+        continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -70,5 +77,5 @@ jobs:
             sed -i 's/"@tawandotorg\/claude-sync"/"@tawanorg\/claude-sync"/' package.json
 
             npm version ${VERSION#v} --no-git-tag-version --allow-same-version
-            npm publish
+            npm publish || echo "Already published to GitHub Packages, skipping"
           fi
