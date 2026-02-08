@@ -1,0 +1,13 @@
+{
+  "name": "claude-sync",
+  "owner": {
+    "name": "tawanorg"
+  },
+  "plugins": [
+    {
+      "name": "claude-sync",
+      "description": "Sync Claude Code sessions across devices with encrypted cloud storage",
+      "path": "./claude-code-plugin"
+    }
+  ]
+}
