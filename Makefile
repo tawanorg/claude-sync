@@ -1,7 +1,7 @@
 .PHONY: build install clean test fmt lint release-dry-run
 
 BINARY_NAME=claude-sync
-VERSION?=0.1.0
+VERSION?=0.1.1
 BUILD_DIR=bin
 GO=go
 
