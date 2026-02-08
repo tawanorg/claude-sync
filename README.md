@@ -31,9 +31,8 @@
 ### First Device
 
 ```bash
-# Install (pick one)
+# Install
 npm install -g @tawandotorg/claude-sync
-# or: go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 
 # Set up (interactive wizard)
 claude-sync init
