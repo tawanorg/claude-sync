@@ -29,6 +29,12 @@ type Config struct {
 
 	// Common fields
 	EncryptionKey string `yaml:"encryption_key_path"`
+
+	// ClaudeDirOverride allows overriding the default ~/.claude path (for testing)
+	ClaudeDirOverride string `yaml:"-"`
+
+	// StateDirOverride allows overriding the state file directory (for testing)
+	StateDirOverride string `yaml:"-"`
 }
 
 // SyncPaths defines which paths under ~/.claude to sync

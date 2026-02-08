@@ -86,9 +86,7 @@ func printBanner() {
 	fmt.Printf("%s\n", colorReset)
 
 	fmt.Printf("  %sSync your Claude Code sessions across all your devices.%s\n", colorDim, colorReset)
-	fmt.Println()
-	fmt.Printf("  %sEncrypted with age • R2 / S3 / GCS supported%s\n", colorDim, colorReset)
-	fmt.Printf("  %sBuilt with ♥ by @tawanorg%s\n", colorDim, colorReset)
+	fmt.Printf("  %sIssues & PRs welcome: %shttps://github.com/tawanorg/claude-sync%s\n", colorDim, colorCyan, colorReset)
 	fmt.Println()
 }
 
@@ -110,7 +108,7 @@ func printWarning(text string) {
 
 func initCmd() *cobra.Command {
 	var provider, bucket string
-	var usePassphrase bool
+	var usePassphrase, force bool
 
 	// R2 flags
 	var accountID, accessKey, secretKey string
@@ -131,211 +129,24 @@ Supported providers:
   - s3:  Amazon S3
   - gcs: Google Cloud Storage
 
-Use --passphrase to derive the key from a memorable passphrase - same
-passphrase on any device produces the same key, no file copying needed.`,
+Examples:
+  claude-sync init                # Full setup wizard
+  claude-sync init --passphrase   # Re-enter passphrase only (keeps storage config)
+  claude-sync init --force        # Reset everything, start fresh`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Show banner
 			printBanner()
 
-			if config.Exists() {
-				var overwrite bool
-				prompt := &survey.Confirm{
-					Message: "Configuration already exists. Overwrite?",
-					Default: false,
-				}
-				if err := survey.AskOne(prompt, &overwrite); err != nil || !overwrite {
-					fmt.Println("  Aborted.")
-					return nil
-				}
-				fmt.Println()
-			}
-
-			// Step 1: Select provider
-			printStep(1, 3, "Select Storage Provider")
-			fmt.Println()
-
-			if provider == "" {
-				prompt := &survey.Select{
-					Message: "Choose your cloud storage provider:",
-					Options: []string{
-						"Cloudflare R2 (recommended - free tier: 10GB)",
-						"Amazon S3",
-						"Google Cloud Storage",
-					},
-				}
-				var choice int
-				if err := survey.AskOne(prompt, &choice); err != nil {
-					return err
-				}
-				switch choice {
-				case 0:
-					provider = "r2"
-				case 1:
-					provider = "s3"
-				case 2:
-					provider = "gcs"
-				}
-			}
-
-			var storageCfg *storage.StorageConfig
-			var err error
-			fmt.Println()
-
-			switch provider {
-			case "r2":
-				storageCfg, err = runR2Wizard(accountID, accessKey, secretKey, bucket)
-			case "s3":
-				storageCfg, err = runS3Wizard(accessKey, secretKey, s3Region, bucket)
-			case "gcs":
-				storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
-			default:
-				return fmt.Errorf("unsupported provider: %s", provider)
-			}
-
-			if err != nil {
-				return err
-			}
-			if storageCfg == nil {
-				return fmt.Errorf("setup cancelled")
-			}
-
-			// Step 2: Encryption setup
-			fmt.Println()
-			printStep(2, 3, "Set Up Encryption")
-			printInfo("Files are encrypted with 'age' before upload.")
-			fmt.Println()
-
-			configDir := config.ConfigDirPath()
-			if err := os.MkdirAll(configDir, 0700); err != nil {
-				return fmt.Errorf("failed to create config directory: %w", err)
-			}
-
+			ctx := context.Background()
 			keyPath := config.AgeKeyFilePath()
 
-			// Check if we should use passphrase mode
-			if !usePassphrase && !crypto.KeyExists(keyPath) {
-				prompt := &survey.Select{
-					Message: "Choose encryption key method:",
-					Options: []string{
-						"Passphrase (recommended) - same key on all devices",
-						"Random key - must copy key file to other devices",
-					},
-				}
-				var choice int
-				if err := survey.AskOne(prompt, &choice); err != nil {
-					return err
-				}
-				usePassphrase = choice == 0
-				fmt.Println()
+			// Special case: --passphrase with existing config = just regenerate key
+			if usePassphrase && config.Exists() && !force {
+				return initPassphraseOnly(ctx, keyPath)
 			}
 
-			if usePassphrase {
-				if crypto.KeyExists(keyPath) {
-					var overwriteKey bool
-					prompt := &survey.Confirm{
-						Message: "Encryption key already exists. Overwrite?",
-						Default: false,
-					}
-					if err := survey.AskOne(prompt, &overwriteKey); err != nil || !overwriteKey {
-						printSuccess("Using existing key")
-						goto skipKeyGen
-					}
-				}
-
-				printInfo("Use the SAME passphrase on all devices.")
-				var passphrase string
-				for {
-					prompt := &survey.Password{
-						Message: "Passphrase (min 8 chars):",
-					}
-					if err := survey.AskOne(prompt, &passphrase); err != nil {
-						return err
-					}
-
-					if err := crypto.ValidatePassphraseStrength(passphrase); err != nil {
-						printWarning(err.Error())
-						continue
-					}
-
-					var confirm string
-					confirmPrompt := &survey.Password{
-						Message: "Confirm passphrase:",
-					}
-					if err := survey.AskOne(confirmPrompt, &confirm); err != nil {
-						return err
-					}
-
-					if passphrase != confirm {
-						printWarning("Passphrases don't match.")
-						continue
-					}
-					break
-				}
-
-				if err := crypto.GenerateKeyFromPassphrase(keyPath, passphrase); err != nil {
-					return fmt.Errorf("failed to generate key: %w", err)
-				}
-				printSuccess("Key derived from passphrase")
-
-			} else if !crypto.KeyExists(keyPath) {
-				if err := crypto.GenerateKey(keyPath); err != nil {
-					return fmt.Errorf("failed to generate key: %w", err)
-				}
-				printSuccess("Key generated: " + keyPath)
-				printWarning("Back up this file! You need it on other devices.")
-			} else {
-				printSuccess("Using existing key")
-			}
-		skipKeyGen:
-
-			// Step 3: Test Connection
-			fmt.Println()
-			printStep(3, 3, "Test Connection")
-
-			store, err := storage.New(storageCfg)
-			if err != nil {
-				// Provide helpful error messages for common issues
-				if strings.Contains(err.Error(), "could not find default credentials") {
-					printWarning("GCS Application Default Credentials not configured.")
-					fmt.Println()
-					printInfo("To set up ADC, run:")
-					fmt.Printf("  %sgcloud auth application-default login%s\n", colorCyan, colorReset)
-					fmt.Println()
-					printInfo("Or use a service account JSON file instead.")
-					return fmt.Errorf("GCS credentials not configured")
-				}
-				return fmt.Errorf("failed to create storage client: %w", err)
-			}
-
-			ctx := context.Background()
-			exists, err := store.BucketExists(ctx)
-			if err != nil {
-				printWarning("Could not verify bucket: " + err.Error())
-			} else if exists {
-				printSuccess("Connected to '" + storageCfg.Bucket + "'")
-			} else {
-				printWarning("Bucket '" + storageCfg.Bucket + "' not found")
-			}
-
-			// Save config only after successful connection test
-			cfg := &config.Config{
-				Storage:       storageCfg,
-				EncryptionKey: "~/.claude-sync/age-key.txt",
-			}
-
-			if err := config.Save(cfg); err != nil {
-				return err
-			}
-
-			// Done
-			fmt.Println()
-			fmt.Println(colorGreen + "  Setup complete!" + colorReset)
-			fmt.Println()
-			printInfo("Run 'claude-sync push' to upload your sessions")
-			printInfo("Run 'claude-sync pull' on other devices to sync")
-			fmt.Println()
-
-			return nil
+			// Normal flow: full setup
+			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile, usePassphrase, force)
 		},
 	}
 
@@ -343,6 +154,7 @@ passphrase on any device produces the same key, no file copying needed.`,
 	cmd.Flags().StringVar(&provider, "provider", "", "Storage provider: r2, s3, or gcs")
 	cmd.Flags().StringVar(&bucket, "bucket", "", "Bucket name")
 	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config/key without prompting")
 
 	// R2 flags
 	cmd.Flags().StringVar(&accountID, "account-id", "", "Cloudflare Account ID (R2)")
@@ -357,6 +169,313 @@ passphrase on any device produces the same key, no file copying needed.`,
 	cmd.Flags().StringVar(&gcsCredentialsFile, "credentials-file", "", "Path to GCS credentials JSON file")
 
 	return cmd
+}
+
+// initPassphraseOnly handles the case where user just wants to re-enter passphrase
+// keeping existing storage configuration
+func initPassphraseOnly(ctx context.Context, keyPath string) error {
+	existingCfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load existing config: %w", err)
+	}
+
+	storageCfg := existingCfg.GetStorageConfig()
+	store, err := storage.New(storageCfg)
+	if err != nil {
+		return fmt.Errorf("failed to connect to storage: %w", err)
+	}
+
+	fmt.Printf("  %sUsing existing storage config:%s %s/%s\n\n",
+		colorDim, colorReset, storageCfg.Provider, storageCfg.Bucket)
+
+	printInfo("Use the SAME passphrase on all devices.")
+
+	shouldClearRemote, err := enterPassphraseAndVerify(ctx, store, keyPath)
+	if err != nil {
+		return err
+	}
+
+	// Clear remote if user chose to start fresh
+	if shouldClearRemote {
+		fmt.Printf("%s⋯%s Clearing remote files...\n", colorDim, colorReset)
+		if err := clearRemoteStorage(ctx, store); err != nil {
+			printWarning("Failed to clear remote: " + err.Error())
+		} else {
+			printSuccess("Remote files cleared")
+		}
+	}
+
+	fmt.Println()
+	fmt.Println(colorGreen + "  Passphrase updated!" + colorReset)
+	fmt.Println()
+
+	return nil
+}
+
+// initFullSetup handles the full init wizard
+func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile string, usePassphrase, force bool) error {
+	if config.Exists() && !force {
+		var overwrite bool
+		prompt := &survey.Confirm{
+			Message: "Configuration already exists. Overwrite?",
+			Default: false,
+		}
+		if err := survey.AskOne(prompt, &overwrite); err != nil || !overwrite {
+			fmt.Println("  Aborted.")
+			return nil
+		}
+		fmt.Println()
+	}
+
+	// Step 1: Select provider
+	printStep(1, 3, "Select Storage Provider")
+	fmt.Println()
+
+	if provider == "" {
+		prompt := &survey.Select{
+			Message: "Choose your cloud storage provider:",
+			Options: []string{
+				"Cloudflare R2 (recommended - free tier: 10GB)",
+				"Amazon S3",
+				"Google Cloud Storage",
+			},
+		}
+		var choice int
+		if err := survey.AskOne(prompt, &choice); err != nil {
+			return err
+		}
+		switch choice {
+		case 0:
+			provider = "r2"
+		case 1:
+			provider = "s3"
+		case 2:
+			provider = "gcs"
+		}
+	}
+
+	var storageCfg *storage.StorageConfig
+	var err error
+	fmt.Println()
+
+	switch provider {
+	case "r2":
+		storageCfg, err = runR2Wizard(accountID, accessKey, secretKey, bucket)
+	case "s3":
+		storageCfg, err = runS3Wizard(accessKey, secretKey, s3Region, bucket)
+	case "gcs":
+		storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
+	default:
+		return fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	if err != nil {
+		return err
+	}
+	if storageCfg == nil {
+		return fmt.Errorf("setup cancelled")
+	}
+
+	// Step 2: Encryption setup
+	fmt.Println()
+	printStep(2, 3, "Set Up Encryption")
+	printInfo("Files are encrypted with 'age' before upload.")
+	fmt.Println()
+
+	configDir := config.ConfigDirPath()
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Check if we should use passphrase mode
+	if !usePassphrase && !crypto.KeyExists(keyPath) {
+		prompt := &survey.Select{
+			Message: "Choose encryption key method:",
+			Options: []string{
+				"Passphrase (recommended) - same key on all devices",
+				"Random key - must copy key file to other devices",
+			},
+		}
+		var choice int
+		if err := survey.AskOne(prompt, &choice); err != nil {
+			return err
+		}
+		usePassphrase = choice == 0
+		fmt.Println()
+	}
+
+	// Create storage client early so we can verify key matches remote
+	store, err := storage.New(storageCfg)
+	if err != nil {
+		if strings.Contains(err.Error(), "could not find default credentials") {
+			printWarning("GCS Application Default Credentials not configured.")
+			fmt.Println()
+			printInfo("To set up ADC, run:")
+			fmt.Printf("  %sgcloud auth application-default login%s\n", colorCyan, colorReset)
+			fmt.Println()
+			printInfo("Or use a service account JSON file instead.")
+			return fmt.Errorf("GCS credentials not configured")
+		}
+		return fmt.Errorf("failed to create storage client: %w", err)
+	}
+
+	shouldClearRemote := false
+
+	if usePassphrase {
+		if crypto.KeyExists(keyPath) && !force {
+			var overwriteKey bool
+			prompt := &survey.Confirm{
+				Message: "Encryption key already exists. Overwrite?",
+				Default: false,
+			}
+			if err := survey.AskOne(prompt, &overwriteKey); err != nil || !overwriteKey {
+				printSuccess("Using existing key")
+				goto skipKeyGen
+			}
+		}
+
+		printInfo("Use the SAME passphrase on all devices.")
+		shouldClearRemote, err = enterPassphraseAndVerify(ctx, store, keyPath)
+		if err != nil {
+			return err
+		}
+
+	} else if !crypto.KeyExists(keyPath) {
+		if err := crypto.GenerateKey(keyPath); err != nil {
+			return fmt.Errorf("failed to generate key: %w", err)
+		}
+		printSuccess("Key generated: " + keyPath)
+		printWarning("Back up this file! You need it on other devices.")
+	} else {
+		printSuccess("Using existing key")
+	}
+skipKeyGen:
+
+	// Step 3: Test Connection
+	fmt.Println()
+	printStep(3, 3, "Test Connection")
+
+	exists, err := store.BucketExists(ctx)
+	if err != nil {
+		printWarning("Could not verify bucket: " + err.Error())
+	} else if exists {
+		printSuccess("Connected to '" + storageCfg.Bucket + "'")
+	} else {
+		printWarning("Bucket '" + storageCfg.Bucket + "' not found")
+	}
+
+	// Clear remote if user chose to start fresh
+	if shouldClearRemote {
+		fmt.Printf("%s⋯%s Clearing remote files...\n", colorDim, colorReset)
+		if err := clearRemoteStorage(ctx, store); err != nil {
+			printWarning("Failed to clear remote: " + err.Error())
+		} else {
+			printSuccess("Remote files cleared")
+		}
+	}
+
+	// Verify encryption key can decrypt remote files (if any exist)
+	if !shouldClearRemote {
+		if err := verifyKeyMatchesRemote(ctx, store, keyPath); err != nil {
+			fmt.Println()
+			printWarning("Encryption key cannot decrypt remote files!")
+			printInfo("The remote bucket has files encrypted with a different key.")
+			fmt.Println()
+			printInfo("Options:")
+			printInfo("  1. Run 'claude-sync init --passphrase' to try a different passphrase")
+			printInfo("  2. Copy the age-key.txt from your original device")
+			printInfo("  3. Run 'claude-sync reset --remote' to clear remote and start fresh")
+			fmt.Println()
+			return fmt.Errorf("encryption key mismatch - cannot sync with remote")
+		}
+		printSuccess("Encryption key verified")
+	}
+
+	// Save config
+	cfg := &config.Config{
+		Storage:       storageCfg,
+		EncryptionKey: "~/.claude-sync/age-key.txt",
+	}
+
+	if err := config.Save(cfg); err != nil {
+		return err
+	}
+
+	// Done
+	fmt.Println()
+	fmt.Println(colorGreen + "  Setup complete!" + colorReset)
+	fmt.Println()
+	printInfo("Run 'claude-sync push' to upload your sessions")
+	printInfo("Run 'claude-sync pull' on other devices to sync")
+	fmt.Println()
+
+	return nil
+}
+
+// enterPassphraseAndVerify prompts for passphrase and verifies against remote
+// Returns shouldClearRemote flag
+func enterPassphraseAndVerify(ctx context.Context, store storage.Storage, keyPath string) (bool, error) {
+	for {
+		var passphrase string
+		for {
+			prompt := &survey.Password{
+				Message: "Passphrase (min 8 chars):",
+			}
+			if err := survey.AskOne(prompt, &passphrase); err != nil {
+				return false, err
+			}
+
+			if err := crypto.ValidatePassphraseStrength(passphrase); err != nil {
+				printWarning(err.Error())
+				continue
+			}
+
+			var confirm string
+			confirmPrompt := &survey.Password{
+				Message: "Confirm passphrase:",
+			}
+			if err := survey.AskOne(confirmPrompt, &confirm); err != nil {
+				return false, err
+			}
+
+			if passphrase != confirm {
+				printWarning("Passphrases don't match.")
+				continue
+			}
+			break
+		}
+
+		if err := crypto.GenerateKeyFromPassphrase(keyPath, passphrase); err != nil {
+			return false, fmt.Errorf("failed to generate key: %w", err)
+		}
+
+		// Verify the key matches existing remote files (if any)
+		if err := verifyKeyMatchesRemote(ctx, store, keyPath); err != nil {
+			// Key mismatch detected - ask user what to do
+			action, actionErr := handleKeyMismatch()
+			if actionErr != nil {
+				return false, actionErr
+			}
+
+			switch action {
+			case actionRetryPassphrase:
+				os.Remove(keyPath)
+				fmt.Println()
+				printInfo("Enter a different passphrase:")
+				continue
+			case actionClearRemote:
+				printSuccess("Key derived from passphrase")
+				printInfo("Remote files will be cleared...")
+				return true, nil
+			case actionAbort:
+				os.Remove(keyPath)
+				return false, fmt.Errorf("setup aborted")
+			}
+		}
+
+		printSuccess("Key derived from passphrase")
+		return false, nil
+	}
 }
 
 func runR2Wizard(accountID, accessKey, secretKey, bucket string) (*storage.StorageConfig, error) {
@@ -723,10 +842,20 @@ func truncatePath(path string, maxLen int) string {
 }
 
 func pullCmd() *cobra.Command {
-	return &cobra.Command{
+	var dryRun, force bool
+
+	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Download remote changes from cloud storage",
-		Long:  `Download and decrypt changed files from cloud storage to ~/.claude.`,
+		Long: `Download and decrypt changed files from cloud storage to ~/.claude.
+
+On first pull with existing local files, you'll be prompted to confirm
+before any files are overwritten. Use --dry-run to preview changes first.
+
+Examples:
+  claude-sync pull              # Pull with safety prompts
+  claude-sync pull --dry-run    # Preview what would be changed
+  claude-sync pull --force      # Skip confirmation prompts`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -736,6 +865,25 @@ func pullCmd() *cobra.Command {
 			syncer, err := sync.NewSyncer(cfg, quiet)
 			if err != nil {
 				return err
+			}
+
+			ctx := context.Background()
+
+			// Check for first pull with existing local files
+			if !syncer.HasState() {
+				hasExisting, err := hasExistingClaudeFiles()
+				if err != nil {
+					return err
+				}
+
+				if hasExisting && !force {
+					return handleFirstPullWithExistingFiles(ctx, syncer, dryRun)
+				}
+			}
+
+			// Handle dry-run for normal pulls
+			if dryRun {
+				return showPullPreview(ctx, syncer)
 			}
 
 			if !quiet {
@@ -772,7 +920,6 @@ func pullCmd() *cobra.Command {
 				})
 			}
 
-			ctx := context.Background()
 			result, err := syncer.Pull(ctx)
 			if err != nil {
 				return err
@@ -820,6 +967,11 @@ func pullCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be changed without making changes")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
+
+	return cmd
 }
 
 func statusCmd() *cobra.Command {
@@ -1547,4 +1699,409 @@ func compareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+// verifyKeyMatchesRemote checks if the encryption key can decrypt existing remote files.
+// Returns nil if no files exist or if decryption succeeds.
+// Returns an error if files exist but cannot be decrypted with the current key.
+func verifyKeyMatchesRemote(ctx context.Context, store storage.Storage, keyPath string) error {
+	// List remote files
+	objects, err := store.List(ctx, "")
+	if err != nil || len(objects) == 0 {
+		return nil // No files to verify, or error listing (will fail later anyway)
+	}
+
+	// Find a small file to test with (prefer smaller files for faster verification)
+	var testObj storage.ObjectInfo
+	for _, obj := range objects {
+		if obj.Size > 0 && obj.Size < 10000 { // Pick a small file under 10KB
+			testObj = obj
+			break
+		}
+	}
+	if testObj.Key == "" && len(objects) > 0 {
+		testObj = objects[0] // Fallback to first file
+	}
+	if testObj.Key == "" {
+		return nil // No suitable file found
+	}
+
+	// Download the test file
+	encrypted, err := store.Download(ctx, testObj.Key)
+	if err != nil {
+		return nil // Download failed, will fail later during pull
+	}
+
+	// Try to decrypt with current key
+	enc, err := crypto.NewEncryptor(keyPath)
+	if err != nil {
+		return fmt.Errorf("failed to load encryption key: %w", err)
+	}
+
+	_, err = enc.Decrypt(encrypted)
+	if err != nil {
+		return fmt.Errorf("key_mismatch: cannot decrypt remote files with current key")
+	}
+
+	return nil
+}
+
+// keyMismatchAction represents the user's choice when a key mismatch is detected
+type keyMismatchAction int
+
+const (
+	actionRetryPassphrase keyMismatchAction = iota
+	actionClearRemote
+	actionAbort
+)
+
+// handleKeyMismatch displays a helpful error message and prompts the user for action
+func handleKeyMismatch() (keyMismatchAction, error) {
+	fmt.Println()
+	printWarning("Cannot decrypt existing remote files!")
+	fmt.Println()
+	printInfo("The bucket contains files encrypted with a different key.")
+	printInfo("This happens when:")
+	printInfo("  - You used a different passphrase on another device")
+	printInfo("  - You previously set up with a random key (not passphrase)")
+	fmt.Println()
+
+	prompt := &survey.Select{
+		Message: "What would you like to do?",
+		Options: []string{
+			"Try a different passphrase",
+			"Clear remote files and start fresh (your local ~/.claude will be pushed)",
+			"Abort setup",
+		},
+	}
+	var choice int
+	if err := survey.AskOne(prompt, &choice); err != nil {
+		return actionAbort, err
+	}
+
+	switch choice {
+	case 0:
+		return actionRetryPassphrase, nil
+	case 1:
+		return actionClearRemote, nil
+	default:
+		return actionAbort, nil
+	}
+}
+
+// clearRemoteStorage deletes all files from the remote storage bucket
+func clearRemoteStorage(ctx context.Context, store storage.Storage) error {
+	objects, err := store.List(ctx, "")
+	if err != nil {
+		return fmt.Errorf("failed to list remote files: %w", err)
+	}
+
+	for _, obj := range objects {
+		if err := store.Delete(ctx, obj.Key); err != nil {
+			return fmt.Errorf("failed to delete %s: %w", obj.Key, err)
+		}
+	}
+
+	return nil
+}
+
+// hasExistingClaudeFiles checks if ~/.claude has any files that would be synced
+func hasExistingClaudeFiles() (bool, error) {
+	claudeDir := config.ClaudeDir()
+	if _, err := os.Stat(claudeDir); os.IsNotExist(err) {
+		return false, nil
+	}
+
+	files, err := sync.GetLocalFiles(claudeDir, config.SyncPaths)
+	if err != nil {
+		return false, err
+	}
+
+	return len(files) > 0, nil
+}
+
+// handleFirstPullWithExistingFiles handles the case where the user is pulling
+// for the first time but already has local files that could be overwritten
+func handleFirstPullWithExistingFiles(ctx context.Context, syncer *sync.Syncer, dryRun bool) error {
+	// Get preview of what would happen
+	preview, err := syncer.PreviewPull(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to preview pull: %w", err)
+	}
+
+	// If nothing would be affected, proceed normally
+	if len(preview.WouldOverwrite) == 0 && len(preview.WouldDownload) == 0 && len(preview.WouldConflict) == 0 {
+		if !quiet {
+			fmt.Printf("%s✓%s Already up to date\n", colorGreen, colorReset)
+		}
+		return nil
+	}
+
+	// Show warning
+	fmt.Println()
+	printWarning("Local ~/.claude already has files that would be affected:")
+	fmt.Println()
+
+	// Show files that would be overwritten
+	for _, f := range preview.WouldOverwrite {
+		localTime := f.LocalTime.Format("2006-01-02")
+		remoteTime := f.RemoteTime.Format("2006-01-02")
+		fmt.Printf("  %sOVERWRITE%s  %s\n", colorYellow, colorReset, f.Path)
+		fmt.Printf("            %s(local: %s, remote: %s)%s\n", colorDim, localTime, remoteTime, colorReset)
+	}
+
+	// Show files that would be downloaded (new)
+	for _, f := range preview.WouldDownload {
+		fmt.Printf("  %sNEW%s        %s\n", colorGreen, colorReset, f.Path)
+	}
+
+	// Show files that would be kept
+	for _, f := range preview.WouldKeep {
+		fmt.Printf("  %sKEEP%s       %s %s(local newer)%s\n", colorCyan, colorReset, f.Path, colorDim, colorReset)
+	}
+
+	// Show local-only files
+	for _, f := range preview.LocalOnlyFiles {
+		fmt.Printf("  %sKEEP%s       %s %s(local only)%s\n", colorCyan, colorReset, f.Path, colorDim, colorReset)
+	}
+
+	// Show conflicts
+	for _, f := range preview.WouldConflict {
+		fmt.Printf("  %sCONFLICT%s   %s %s(both changed)%s\n", colorYellow, colorReset, f.Path, colorDim, colorReset)
+	}
+
+	fmt.Println()
+
+	// If dry-run, stop here
+	if dryRun {
+		fmt.Printf("%sDry run complete. No changes were made.%s\n", colorDim, colorReset)
+		fmt.Printf("%sRun 'claude-sync pull' to apply changes, or 'claude-sync pull --force' to skip this prompt.%s\n", colorDim, colorReset)
+		return nil
+	}
+
+	// Ask user what to do
+	prompt := &survey.Select{
+		Message: "How would you like to proceed?",
+		Options: []string{
+			"Backup existing files, then pull (recommended)",
+			"Overwrite without backup",
+			"Abort",
+		},
+	}
+	var choice int
+	if err := survey.AskOne(prompt, &choice); err != nil {
+		return err
+	}
+
+	switch choice {
+	case 0:
+		// Backup and proceed
+		backupDir, err := createBackup()
+		if err != nil {
+			return fmt.Errorf("failed to create backup: %w", err)
+		}
+		printSuccess("Backup created: " + backupDir)
+		fmt.Println()
+		return executePull(ctx, syncer)
+
+	case 1:
+		// Proceed without backup
+		fmt.Println()
+		return executePull(ctx, syncer)
+
+	default:
+		// Abort
+		fmt.Println("  Aborted.")
+		return nil
+	}
+}
+
+// createBackup creates a backup of the current ~/.claude directory
+func createBackup() (string, error) {
+	claudeDir := config.ClaudeDir()
+	timestamp := time.Now().Format("20060102-150405")
+	backupDir := claudeDir + ".backup." + timestamp
+
+	// Create backup directory
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create backup directory: %w", err)
+	}
+
+	// Copy all syncable files to backup
+	files, err := sync.GetLocalFiles(claudeDir, config.SyncPaths)
+	if err != nil {
+		return "", fmt.Errorf("failed to list files: %w", err)
+	}
+
+	for relPath := range files {
+		srcPath := filepath.Join(claudeDir, relPath)
+		dstPath := filepath.Join(backupDir, relPath)
+
+		// Ensure destination directory exists
+		dstDir := filepath.Dir(dstPath)
+		if err := os.MkdirAll(dstDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create directory %s: %w", dstDir, err)
+		}
+
+		// Copy file
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read %s: %w", relPath, err)
+		}
+
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			return "", fmt.Errorf("failed to write %s: %w", relPath, err)
+		}
+	}
+
+	return backupDir, nil
+}
+
+// showPullPreview shows what would happen during a pull without making changes
+func showPullPreview(ctx context.Context, syncer *sync.Syncer) error {
+	preview, err := syncer.PreviewPull(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to preview pull: %w", err)
+	}
+
+	// If nothing would happen
+	total := len(preview.WouldDownload) + len(preview.WouldOverwrite) + len(preview.WouldConflict)
+	if total == 0 {
+		fmt.Printf("%s✓%s Already up to date (dry run)\n", colorGreen, colorReset)
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Printf("%sDry run - no changes will be made:%s\n\n", colorBold, colorReset)
+
+	// Show files that would be downloaded (new)
+	if len(preview.WouldDownload) > 0 {
+		fmt.Printf("Would download (%d new files):\n", len(preview.WouldDownload))
+		for _, f := range preview.WouldDownload {
+			fmt.Printf("  %s+%s %s (%s)\n", colorGreen, colorReset, f.Path, formatSize(f.RemoteSize))
+		}
+		fmt.Println()
+	}
+
+	// Show files that would be overwritten
+	if len(preview.WouldOverwrite) > 0 {
+		fmt.Printf("Would overwrite (%d files):\n", len(preview.WouldOverwrite))
+		for _, f := range preview.WouldOverwrite {
+			fmt.Printf("  %s~%s %s (local: %s, remote: %s)\n",
+				colorYellow, colorReset, f.Path,
+				formatSize(f.LocalSize), formatSize(f.RemoteSize))
+		}
+		fmt.Println()
+	}
+
+	// Show files that would conflict
+	if len(preview.WouldConflict) > 0 {
+		fmt.Printf("Would create conflicts (%d files):\n", len(preview.WouldConflict))
+		for _, f := range preview.WouldConflict {
+			fmt.Printf("  %s!%s %s (both local and remote changed)\n", colorYellow, colorReset, f.Path)
+		}
+		fmt.Println()
+	}
+
+	// Show files that would be kept
+	if len(preview.WouldKeep) > 0 {
+		fmt.Printf("Would keep local (%d files newer locally):\n", len(preview.WouldKeep))
+		for _, f := range preview.WouldKeep {
+			fmt.Printf("  %s=%s %s\n", colorDim, colorReset, f.Path)
+		}
+		fmt.Println()
+	}
+
+	// Summary
+	fmt.Printf("%sSummary:%s %d would download, %d would overwrite, %d conflicts, %d unchanged\n",
+		colorBold, colorReset,
+		len(preview.WouldDownload),
+		len(preview.WouldOverwrite),
+		len(preview.WouldConflict),
+		len(preview.WouldKeep))
+	fmt.Println()
+	fmt.Printf("%sRun 'claude-sync pull' to apply these changes.%s\n", colorDim, colorReset)
+
+	return nil
+}
+
+// executePull performs the actual pull operation with progress output
+func executePull(ctx context.Context, syncer *sync.Syncer) error {
+	if !quiet {
+		syncer.SetProgressFunc(func(event sync.ProgressEvent) {
+			if event.Error != nil {
+				fmt.Printf("\r%s✗%s %s: %v\n", colorYellow, colorReset, event.Path, event.Error)
+				return
+			}
+
+			switch event.Action {
+			case "scan":
+				if event.Complete {
+					fmt.Printf("\r%s✓%s Already up to date\n", colorGreen, colorReset)
+				} else {
+					fmt.Printf("%s⋯%s %s\n", colorDim, colorReset, event.Path)
+				}
+			case "download":
+				if event.Complete {
+					// Final newline after progress
+				} else {
+					progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
+					shortPath := truncatePath(event.Path, 50)
+					fmt.Printf("\r%s↓%s %s%s%s %s (%s)%s",
+						colorGreen, colorReset,
+						colorDim, progress, colorReset,
+						shortPath, formatSize(event.Size),
+						strings.Repeat(" ", 10))
+				}
+			case "conflict":
+				fmt.Printf("\r%s⚠%s Conflict: %s (saved as .conflict)\n",
+					colorYellow, colorReset, event.Path)
+			}
+		})
+	}
+
+	result, err := syncer.Pull(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !quiet {
+		fmt.Println()
+
+		if len(result.Downloaded) == 0 && len(result.Conflicts) == 0 && len(result.Errors) == 0 {
+			// Already printed "Already up to date"
+		} else {
+			var parts []string
+			if len(result.Downloaded) > 0 {
+				parts = append(parts, fmt.Sprintf("%s%d downloaded%s", colorGreen, len(result.Downloaded), colorReset))
+			}
+			if len(result.Conflicts) > 0 {
+				parts = append(parts, fmt.Sprintf("%s%d conflicts%s", colorYellow, len(result.Conflicts), colorReset))
+			}
+			if len(result.Errors) > 0 {
+				parts = append(parts, fmt.Sprintf("%s%d failed%s", colorYellow, len(result.Errors), colorReset))
+			}
+			if len(parts) > 0 {
+				fmt.Printf("%s✓%s Pull complete: %s\n", colorGreen, colorReset, strings.Join(parts, ", "))
+			}
+
+			if len(result.Conflicts) > 0 {
+				fmt.Printf("\n%sConflicts (both local and remote changed):%s\n", colorYellow, colorReset)
+				for _, c := range result.Conflicts {
+					fmt.Printf("  %s•%s %s\n", colorYellow, colorReset, c)
+				}
+				fmt.Printf("\n%sLocal versions kept. Remote saved as .conflict files.%s\n", colorDim, colorReset)
+				fmt.Printf("%sRun '%sclaude-sync conflicts%s%s' to review and resolve.%s\n", colorDim, colorCyan, colorReset, colorDim, colorReset)
+			}
+
+			if len(result.Errors) > 0 {
+				fmt.Printf("\n%sErrors:%s\n", colorYellow, colorReset)
+				for _, e := range result.Errors {
+					fmt.Printf("  %s•%s %v\n", colorYellow, colorReset, e)
+				}
+			}
+		}
+	}
+
+	return nil
 }

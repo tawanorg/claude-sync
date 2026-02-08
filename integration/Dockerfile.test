@@ -1,0 +1,23 @@
+FROM golang:1.24-alpine
+
+# Install required tools
+RUN apk add --no-cache git bash curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build claude-sync binary
+RUN go build -o /usr/local/bin/claude-sync ./cmd/claude-sync
+
+# Create directories for test data
+RUN mkdir -p /root/.claude /root/.claude-sync
+
+# Default command - keep container running
+CMD ["sleep", "infinity"]

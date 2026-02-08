@@ -27,11 +27,27 @@ type SyncState struct {
 	DeviceID string                `json:"device_id"`
 	LastPush time.Time             `json:"last_push,omitempty"`
 	LastPull time.Time             `json:"last_pull,omitempty"`
+
+	// savePath is the custom path to save state to (if set)
+	savePath string `json:"-"`
 }
 
 func LoadState() (*SyncState, error) {
-	statePath := config.StateFilePath()
+	return loadStateFromPath(config.StateFilePath())
+}
 
+// LoadStateFromDir loads state from a custom directory (for testing)
+func LoadStateFromDir(dir string) (*SyncState, error) {
+	statePath := filepath.Join(dir, config.StateFile)
+	state, err := loadStateFromPath(statePath)
+	if err != nil {
+		return nil, err
+	}
+	state.savePath = statePath
+	return state, nil
+}
+
+func loadStateFromPath(statePath string) (*SyncState, error) {
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -61,7 +77,16 @@ func NewState() *SyncState {
 }
 
 func (s *SyncState) Save() error {
-	statePath := config.StateFilePath()
+	statePath := s.savePath
+	if statePath == "" {
+		statePath = config.StateFilePath()
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(statePath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("failed to create state directory: %w", err)
+	}
 
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -96,6 +121,11 @@ func (s *SyncState) GetFile(relativePath string) *FileState {
 
 func (s *SyncState) RemoveFile(relativePath string) {
 	delete(s.Files, relativePath)
+}
+
+// IsEmpty returns true if no files have been synced yet (first sync)
+func (s *SyncState) IsEmpty() bool {
+	return len(s.Files) == 0 && s.LastSync.IsZero()
 }
 
 func HashFile(path string) (string, error) {

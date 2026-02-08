@@ -59,16 +59,28 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 		return nil, fmt.Errorf("failed to create encryptor: %w", err)
 	}
 
-	state, err := LoadState()
+	// Use overridden state path if provided, otherwise use default
+	var state *SyncState
+	if cfg.StateDirOverride != "" {
+		state, err = LoadStateFromDir(cfg.StateDirOverride)
+	} else {
+		state, err = LoadState()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load state: %w", err)
+	}
+
+	// Use overridden claude dir if provided, otherwise use default
+	claudeDir := config.ClaudeDir()
+	if cfg.ClaudeDirOverride != "" {
+		claudeDir = cfg.ClaudeDirOverride
 	}
 
 	return &Syncer{
 		storage:   store,
 		encryptor: enc,
 		state:     state,
-		claudeDir: config.ClaudeDir(),
+		claudeDir: claudeDir,
 		quiet:     quiet,
 	}, nil
 }
@@ -359,6 +371,119 @@ func (s *Syncer) localPath(remoteKey string) string {
 
 func (s *Syncer) GetState() *SyncState {
 	return s.state
+}
+
+// HasState returns true if the syncer has existing sync state (not first sync)
+func (s *Syncer) HasState() bool {
+	return !s.state.IsEmpty()
+}
+
+// FilePreview represents a file that would be affected by a pull operation
+type FilePreview struct {
+	Path       string
+	LocalTime  time.Time
+	RemoteTime time.Time
+	LocalSize  int64
+	RemoteSize int64
+	LocalOnly  bool // File exists only locally
+	RemoteOnly bool // File exists only remotely
+}
+
+// PullPreview represents what would happen during a pull operation
+type PullPreview struct {
+	WouldDownload  []FilePreview // New remote files that would be downloaded
+	WouldOverwrite []FilePreview // Existing local files that would be replaced
+	WouldKeep      []FilePreview // Local files that would be kept (local newer)
+	WouldConflict  []FilePreview // Files that would create a conflict
+	LocalOnlyFiles []FilePreview // Files that exist only locally
+}
+
+// PreviewPull returns a preview of what would happen during a pull operation
+// without actually making any changes
+func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
+	preview := &PullPreview{}
+
+	// List all remote objects
+	remoteObjects, err := s.storage.List(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remote objects: %w", err)
+	}
+
+	// Build remote file map
+	remoteFiles := make(map[string]storage.ObjectInfo)
+	for _, obj := range remoteObjects {
+		if !strings.HasSuffix(obj.Key, ".age") {
+			continue
+		}
+		localPath := s.localPath(obj.Key)
+		remoteFiles[localPath] = obj
+	}
+
+	// Get current local files
+	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local files: %w", err)
+	}
+
+	// Analyze each remote file
+	for localPath, remoteObj := range remoteFiles {
+		localInfo, localExists := localFiles[localPath]
+		stateFile := s.state.GetFile(localPath)
+
+		fp := FilePreview{
+			Path:       localPath,
+			RemoteTime: remoteObj.LastModified,
+			RemoteSize: remoteObj.Size,
+		}
+
+		if localExists {
+			fp.LocalTime = localInfo.ModTime()
+			fp.LocalSize = localInfo.Size()
+		}
+
+		if !localExists {
+			// New file from remote
+			fp.RemoteOnly = true
+			preview.WouldDownload = append(preview.WouldDownload, fp)
+		} else if stateFile != nil {
+			// Check if remote is newer than our last known state
+			if remoteObj.LastModified.After(stateFile.Uploaded) {
+				// Remote was updated after we last uploaded
+				localHash, _ := HashFile(filepath.Join(s.claudeDir, localPath))
+				if localHash != stateFile.Hash {
+					// Conflict: both changed
+					preview.WouldConflict = append(preview.WouldConflict, fp)
+				} else {
+					// Only remote changed
+					preview.WouldOverwrite = append(preview.WouldOverwrite, fp)
+				}
+			} else {
+				// Local is current
+				preview.WouldKeep = append(preview.WouldKeep, fp)
+			}
+		} else {
+			// No state - compare timestamps
+			if localInfo.ModTime().Before(remoteObj.LastModified) {
+				preview.WouldOverwrite = append(preview.WouldOverwrite, fp)
+			} else {
+				preview.WouldKeep = append(preview.WouldKeep, fp)
+			}
+		}
+	}
+
+	// Find local-only files
+	for localPath, localInfo := range localFiles {
+		if _, exists := remoteFiles[localPath]; !exists {
+			preview.LocalOnlyFiles = append(preview.LocalOnlyFiles, FilePreview{
+				Path:      localPath,
+				LocalTime: localInfo.ModTime(),
+				LocalSize: localInfo.Size(),
+				LocalOnly: true,
+			})
+		}
+	}
+
+	return preview, nil
 }
 
 type DiffEntry struct {

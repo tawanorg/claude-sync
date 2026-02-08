@@ -1,0 +1,65 @@
+version: '3.8'
+
+# Cross-device integration tests for claude-sync
+# Each container simulates a separate device with isolated filesystem
+
+services:
+  device-a:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile.test
+    tty: true
+    stdin_open: true
+    environment:
+      - CLAUDE_SYNC_R2_ACCOUNT_ID=${CLAUDE_SYNC_R2_ACCOUNT_ID}
+      - CLAUDE_SYNC_R2_ACCESS_KEY_ID=${CLAUDE_SYNC_R2_ACCESS_KEY_ID}
+      - CLAUDE_SYNC_R2_SECRET_ACCESS_KEY=${CLAUDE_SYNC_R2_SECRET_ACCESS_KEY}
+      - CLAUDE_SYNC_R2_BUCKET=${CLAUDE_SYNC_R2_BUCKET:-claude-sync-test}
+      - CLAUDE_SYNC_TEST_PASSPHRASE=${CLAUDE_SYNC_TEST_PASSPHRASE:-test-passphrase-123}
+    volumes:
+      - device-a-home:/root
+    networks:
+      - sync-network
+
+  device-b:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile.test
+    tty: true
+    stdin_open: true
+    environment:
+      - CLAUDE_SYNC_R2_ACCOUNT_ID=${CLAUDE_SYNC_R2_ACCOUNT_ID}
+      - CLAUDE_SYNC_R2_ACCESS_KEY_ID=${CLAUDE_SYNC_R2_ACCESS_KEY_ID}
+      - CLAUDE_SYNC_R2_SECRET_ACCESS_KEY=${CLAUDE_SYNC_R2_SECRET_ACCESS_KEY}
+      - CLAUDE_SYNC_R2_BUCKET=${CLAUDE_SYNC_R2_BUCKET:-claude-sync-test}
+      - CLAUDE_SYNC_TEST_PASSPHRASE=${CLAUDE_SYNC_TEST_PASSPHRASE:-test-passphrase-123}
+    volumes:
+      - device-b-home:/root
+    networks:
+      - sync-network
+
+  device-c:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile.test
+    tty: true
+    stdin_open: true
+    environment:
+      - CLAUDE_SYNC_R2_ACCOUNT_ID=${CLAUDE_SYNC_R2_ACCOUNT_ID}
+      - CLAUDE_SYNC_R2_ACCESS_KEY_ID=${CLAUDE_SYNC_R2_ACCESS_KEY_ID}
+      - CLAUDE_SYNC_R2_SECRET_ACCESS_KEY=${CLAUDE_SYNC_R2_SECRET_ACCESS_KEY}
+      - CLAUDE_SYNC_R2_BUCKET=${CLAUDE_SYNC_R2_BUCKET:-claude-sync-test}
+      - CLAUDE_SYNC_TEST_PASSPHRASE=${CLAUDE_SYNC_TEST_PASSPHRASE:-test-passphrase-123}
+    volumes:
+      - device-c-home:/root
+    networks:
+      - sync-network
+
+volumes:
+  device-a-home:
+  device-b-home:
+  device-c-home:
+
+networks:
+  sync-network:
+    driver: bridge

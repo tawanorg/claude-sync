@@ -8,8 +8,7 @@ bin/claude-sync-*
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
-*.test
+# Test binary, built with `go test -c
 
 # Output of the go coverage tool
 *.out
@@ -32,3 +31,5 @@ Thumbs.db
 # Local config (contains secrets)
 .claude-sync/
 .npmrc
+.env
+.env.*
