@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	version = "0.3.1"
+	version = "dev" // Set via ldflags at build time: -ldflags "-X main.version=x.x.x"
 	quiet   bool
 )
 

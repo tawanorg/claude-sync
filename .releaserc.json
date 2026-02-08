@@ -5,10 +5,10 @@
     "@semantic-release/release-notes-generator",
     "@semantic-release/changelog",
     ["@semantic-release/exec", {
-      "prepareCmd": "sed -i 's/version = \"[^\"]*\"/version = \"${nextRelease.version}\"/' cmd/claude-sync/main.go && sed -i 's/VERSION?=[^ ]*/VERSION?=${nextRelease.version}/' Makefile && make build-all"
+      "prepareCmd": "VERSION=${nextRelease.version} make build-all"
     }],
     ["@semantic-release/git", {
-      "assets": ["CHANGELOG.md", "cmd/claude-sync/main.go", "Makefile"],
+      "assets": ["CHANGELOG.md"],
       "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
     }],
     ["@semantic-release/github", {

@@ -1,7 +1,7 @@
 .PHONY: build install clean test fmt lint release-dry-run setup-hooks check
 
 BINARY_NAME=claude-sync
-VERSION?=0.3.1
+VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DIR=bin
 GO=go
 
