@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.0
+	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.45.0
 	gopkg.in/yaml.v3 v3.0.1

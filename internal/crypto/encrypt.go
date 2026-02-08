@@ -3,13 +3,13 @@ package crypto
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"filippo.io/age"
+	"github.com/btcsuite/btcd/btcutil/bech32"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
 )
@@ -121,76 +121,25 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 
 // encodeAgeIdentity encodes a 32-byte scalar as an age identity string
 func encodeAgeIdentity(scalar []byte) string {
-	// age uses Bech32 encoding with HRP "AGE-SECRET-KEY-" (uppercase)
-	// The checksum must be computed with the uppercase HRP
-	const charset = "QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L"
-	hrp := "AGE-SECRET-KEY-"
+	// age uses Bech32 encoding with HRP "age-secret-key-"
+	// The bech32 library works with lowercase, then we convert to uppercase
+	hrp := "age-secret-key-"
 
-	// Convert to 5-bit groups
-	var data []int
-	acc := 0
-	bits := 0
-	for _, b := range scalar {
-		acc = (acc << 8) | int(b)
-		bits += 8
-		for bits >= 5 {
-			bits -= 5
-			data = append(data, (acc>>bits)&31)
-		}
-	}
-	if bits > 0 {
-		data = append(data, (acc<<(5-bits))&31)
+	// Convert 8-bit bytes to 5-bit groups using the bech32 library
+	converted, err := bech32.ConvertBits(scalar, 8, 5, true)
+	if err != nil {
+		// This should never fail for valid input
+		return ""
 	}
 
-	// Calculate checksum with uppercase HRP
-	checksum := bech32Checksum(hrp, data)
-	data = append(data, checksum...)
-
-	// Encode
-	var result strings.Builder
-	result.WriteString(hrp)
-	result.WriteString("1") // separator
-	for _, d := range data {
-		result.WriteByte(charset[d])
+	// Encode using bech32
+	encoded, err := bech32.Encode(hrp, converted)
+	if err != nil {
+		return ""
 	}
 
-	return result.String()
-}
-
-func bech32Checksum(hrp string, data []int) []int {
-	values := bech32HrpExpand(hrp)
-	values = append(values, data...)
-	values = append(values, []int{0, 0, 0, 0, 0, 0}...)
-	polymod := bech32Polymod(values) ^ 0x2bc830a3 // age uses this constant
-	checksum := make([]int, 6)
-	for i := 0; i < 6; i++ {
-		checksum[i] = (polymod >> (5 * (5 - i))) & 31
-	}
-	return checksum
-}
-
-func bech32HrpExpand(hrp string) []int {
-	ret := make([]int, len(hrp)*2+1)
-	for i, c := range hrp {
-		ret[i] = int(c) >> 5
-		ret[i+len(hrp)+1] = int(c) & 31
-	}
-	return ret
-}
-
-func bech32Polymod(values []int) int {
-	gen := []int{0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3}
-	chk := 1
-	for _, v := range values {
-		top := chk >> 25
-		chk = (chk&0x1ffffff)<<5 ^ v
-		for i := 0; i < 5; i++ {
-			if (top>>i)&1 == 1 {
-				chk ^= gen[i]
-			}
-		}
-	}
-	return chk
+	// Age uses uppercase for secret keys
+	return strings.ToUpper(encoded)
 }
 
 // ValidatePassphraseStrength checks if a passphrase is strong enough
@@ -209,6 +158,3 @@ func KeyExists(keyPath string) bool {
 	_, err := os.Stat(keyPath)
 	return err == nil
 }
-
-// suppress unused import warning
-var _ = binary.LittleEndian

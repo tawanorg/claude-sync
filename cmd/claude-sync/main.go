@@ -32,8 +32,6 @@ const (
 	colorCyan   = "\033[36m"
 	colorGreen  = "\033[32m"
 	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorMagenta = "\033[35m"
 )
 
 func main() {
@@ -100,10 +98,6 @@ func printWarning(text string) {
 	fmt.Printf("  %s%s%s\n", colorYellow, text, colorReset)
 }
 
-func printCommand(cmd string) {
-	fmt.Printf("      %s$ %s%s\n", colorMagenta, cmd, colorReset)
-}
-
 func promptInput(reader *bufio.Reader, prompt string, defaultVal string) string {
 	if defaultVal != "" {
 		fmt.Printf("      %s [%s]: ", prompt, defaultVal)
@@ -118,22 +112,16 @@ func promptInput(reader *bufio.Reader, prompt string, defaultVal string) string 
 	return input
 }
 
-func waitForEnter(reader *bufio.Reader) {
-	fmt.Printf("\n      %sPress Enter when ready...%s", colorDim, colorReset)
-	reader.ReadString('\n')
-}
-
 func initCmd() *cobra.Command {
 	var accountID, accessKey, secretKey, bucket string
-	var skipGuide, usePassphrase bool
+	var usePassphrase bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize claude-sync configuration",
 		Long: `Set up Cloudflare R2 credentials and generate encryption keys.
 
-By default, a random encryption key is generated that you must copy to other devices.
-Use --passphrase to derive the key from a memorable passphrase instead - same
+Use --passphrase to derive the key from a memorable passphrase - same
 passphrase on any device produces the same key, no file copying needed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reader := bufio.NewReader(os.Stdin)
@@ -153,73 +141,38 @@ passphrase on any device produces the same key, no file copying needed.`,
 				fmt.Println()
 			}
 
-			totalSteps := 4
-			if skipGuide {
-				totalSteps = 3
-			}
+			// Step 1: Show how to get R2 credentials
+			printStep(1, 3, "Get R2 Credentials")
+			fmt.Println()
+			printInfo("You need a Cloudflare R2 bucket and API token.")
+			printInfo("R2 free tier includes 10GB storage.")
+			fmt.Println()
+			fmt.Printf("  %s1.%s Create bucket: %shttps://dash.cloudflare.com/?to=/:account/r2/new%s\n",
+				colorCyan, colorReset, colorDim, colorReset)
+			fmt.Printf("  %s2.%s Create API token: %shttps://dash.cloudflare.com/?to=/:account/r2/api-tokens%s\n",
+				colorCyan, colorReset, colorDim, colorReset)
+			printInfo("   Select 'Object Read & Write' permission")
+			fmt.Println()
 
-			// Step 1: Create R2 Bucket (with guidance)
-			if !skipGuide {
-				printStep(1, totalSteps, "Create Cloudflare R2 Bucket")
-				printInfo("R2 is Cloudflare's S3-compatible storage (free tier: 10GB)")
-				fmt.Println()
-				printInfo("1. Go to: https://dash.cloudflare.com/?to=/:account/r2/new")
-				printInfo("2. Click 'Create bucket'")
-				printInfo("3. Name it 'claude-sync' (or your preferred name)")
-				printInfo("4. Leave defaults and click 'Create bucket'")
-				waitForEnter(reader)
-			}
-
-			// Step 2: Get R2 API Token
-			currentStep := 1
-			if !skipGuide {
-				currentStep = 2
-			}
-			printStep(currentStep, totalSteps, "Get R2 API Credentials")
-			if !skipGuide {
-				printInfo("You need an API token with read/write access to R2.")
-				fmt.Println()
-				printInfo("1. Go to: https://dash.cloudflare.com/?to=/:account/r2/api-tokens")
-				printInfo("2. Click 'Create API token'")
-				printInfo("3. Give it a name like 'claude-sync'")
-				printInfo("4. Permissions: 'Object Read & Write'")
-				printInfo("5. Specify bucket: select your bucket (or leave as 'All')")
-				printInfo("6. Click 'Create API Token'")
-				fmt.Println()
-				printInfo("Copy the credentials shown (you won't see them again!)")
-				waitForEnter(reader)
-				fmt.Println()
-			}
-
-			// Prompt for Account ID
+			// Prompt for credentials
 			if accountID == "" {
-				printInfo("Your Account ID is in the R2 dashboard URL:")
-				printInfo("https://dash.cloudflare.com/<ACCOUNT_ID>/r2/...")
-				fmt.Println()
+				printInfo("Account ID is in URL: dash.cloudflare.com/<ACCOUNT_ID>/r2")
 				accountID = promptInput(reader, "Account ID", "")
 			}
-
-			// Prompt for Access Key
 			if accessKey == "" {
-				fmt.Println()
 				accessKey = promptInput(reader, "Access Key ID", "")
 			}
-
-			// Prompt for Secret Key
 			if secretKey == "" {
 				secretKey = promptInput(reader, "Secret Access Key", "")
 			}
-
-			// Prompt for Bucket
 			if bucket == "" {
-				fmt.Println()
 				bucket = promptInput(reader, "Bucket name", "claude-sync")
 			}
 
-			// Step 3: Generate Encryption Key
-			currentStep++
-			printStep(currentStep, totalSteps, "Set Up Encryption")
-			printInfo("All files are encrypted locally before upload using 'age' encryption.")
+			// Step 2: Encryption setup
+			fmt.Println()
+			printStep(2, 3, "Set Up Encryption")
+			printInfo("Files are encrypted with 'age' before upload.")
 			fmt.Println()
 
 			configDir := config.ConfigDirPath()
@@ -230,38 +183,28 @@ passphrase on any device produces the same key, no file copying needed.`,
 			keyPath := config.AgeKeyFilePath()
 
 			// Check if we should use passphrase mode
-			if !usePassphrase && !crypto.KeyExists(keyPath) && !skipGuide {
-				// Ask user which mode they prefer
-				fmt.Printf("      %sHow do you want to set up encryption?%s\n\n", colorBold, colorReset)
-				fmt.Printf("      %s[1]%s Passphrase %s(recommended)%s\n", colorCyan, colorReset, colorGreen, colorReset)
-				printInfo("    Same passphrase = same key on any device. No file copying.")
+			if !usePassphrase && !crypto.KeyExists(keyPath) {
+				fmt.Printf("  %s[1]%s Passphrase %s(recommended)%s - same key on all devices\n",
+					colorCyan, colorReset, colorGreen, colorReset)
+				fmt.Printf("  %s[2]%s Random key - must copy key file to other devices\n",
+					colorCyan, colorReset)
 				fmt.Println()
-				fmt.Printf("      %s[2]%s Random key\n", colorCyan, colorReset)
-				printInfo("    More secure, but you must copy the key file to other devices.")
-				fmt.Println()
-
 				choice := promptInput(reader, "Choice", "1")
-				usePassphrase = choice == "1" || strings.ToLower(choice) == "passphrase"
+				usePassphrase = choice == "1"
 				fmt.Println()
 			}
 
 			if usePassphrase {
-				// Passphrase-based key derivation
 				if crypto.KeyExists(keyPath) {
-					printWarning("Encryption key already exists.")
-					printInfo("Using passphrase will overwrite it.")
-					confirm := promptInput(reader, "Continue? [y/N]", "n")
+					printWarning("Encryption key exists. Overwrite? [y/N]")
+					confirm := promptInput(reader, "", "n")
 					if strings.ToLower(confirm) != "y" {
-						printSuccess("Using existing encryption key: " + keyPath)
+						printSuccess("Using existing key")
 						goto skipKeyGen
 					}
-					fmt.Println()
 				}
 
-				printInfo("Enter a passphrase you'll remember.")
-				printInfo("Use the SAME passphrase on all your devices.")
-				fmt.Println()
-
+				printInfo("Use the SAME passphrase on all devices.")
 				var passphrase string
 				for {
 					fmt.Printf("      Passphrase (min 8 chars): ")
@@ -273,37 +216,28 @@ passphrase on any device produces the same key, no file copying needed.`,
 						continue
 					}
 
-					// Confirm passphrase
-					fmt.Printf("      Confirm passphrase: ")
+					fmt.Printf("      Confirm: ")
 					confirmBytes, _ := reader.ReadString('\n')
-					confirm := strings.TrimSpace(confirmBytes)
-
-					if passphrase != confirm {
-						printWarning("Passphrases don't match. Try again.")
+					if passphrase != strings.TrimSpace(confirmBytes) {
+						printWarning("Passphrases don't match.")
 						continue
 					}
 					break
 				}
 
 				if err := crypto.GenerateKeyFromPassphrase(keyPath, passphrase); err != nil {
-					return fmt.Errorf("failed to generate encryption key: %w", err)
+					return fmt.Errorf("failed to generate key: %w", err)
 				}
-				printSuccess("Encryption key derived from passphrase")
-				fmt.Println()
-				printInfo("Use this same passphrase when setting up other devices.")
+				printSuccess("Key derived from passphrase")
 
 			} else if !crypto.KeyExists(keyPath) {
-				// Random key generation
 				if err := crypto.GenerateKey(keyPath); err != nil {
-					return fmt.Errorf("failed to generate encryption key: %w", err)
+					return fmt.Errorf("failed to generate key: %w", err)
 				}
-				printSuccess("Encryption key generated: " + keyPath)
-				fmt.Println()
-				printWarning("IMPORTANT: Back up this key file!")
-				printInfo("You'll need it to decrypt your sessions on other devices.")
-				printInfo("Without it, your synced data cannot be recovered.")
+				printSuccess("Key generated: " + keyPath)
+				printWarning("Back up this file! You need it on other devices.")
 			} else {
-				printSuccess("Using existing encryption key: " + keyPath)
+				printSuccess("Using existing key")
 			}
 		skipKeyGen:
 
@@ -320,9 +254,9 @@ passphrase on any device produces the same key, no file copying needed.`,
 				return err
 			}
 
-			// Step 4: Test Connection
-			currentStep++
-			printStep(currentStep, totalSteps, "Test Connection")
+			// Step 3: Test Connection
+			fmt.Println()
+			printStep(3, 3, "Test Connection")
 
 			cfg.Endpoint = fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 			r2, err := storage.NewR2Client(cfg)
@@ -334,41 +268,18 @@ passphrase on any device produces the same key, no file copying needed.`,
 			exists, err := r2.BucketExists(ctx)
 			if err != nil {
 				printWarning("Could not verify bucket: " + err.Error())
-				printInfo("Check your credentials and try again.")
 			} else if exists {
-				printSuccess("Connected to R2 bucket '" + bucket + "'")
+				printSuccess("Connected to '" + bucket + "'")
 			} else {
 				printWarning("Bucket '" + bucket + "' not found")
-				printInfo("Create it at: https://dash.cloudflare.com/?to=/:account/r2/new")
 			}
 
-			// Success message
+			// Done
 			fmt.Println()
 			fmt.Println(colorGreen + "  Setup complete!" + colorReset)
 			fmt.Println()
-			fmt.Println("  " + colorBold + "Next steps:" + colorReset)
-			fmt.Println()
-			fmt.Printf("  %s1.%s Push your sessions to the cloud:\n", colorCyan, colorReset)
-			printCommand("claude-sync push")
-			fmt.Println()
-			fmt.Printf("  %s2.%s On another device, install and pull:\n", colorCyan, colorReset)
-			printCommand("go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest")
-			if usePassphrase {
-				printCommand("claude-sync init --passphrase  # Use same passphrase")
-			} else {
-				printCommand("claude-sync init --skip-guide")
-				printCommand("# Copy ~/.claude-sync/age-key.txt from this device")
-			}
-			printCommand("claude-sync pull")
-			fmt.Println()
-			fmt.Printf("  %s3.%s (Optional) Add to shell for auto-sync:\n", colorCyan, colorReset)
-			printInfo("Add to ~/.zshrc or ~/.bashrc:")
-			fmt.Println()
-			fmt.Printf("      %s# Auto-sync Claude sessions%s\n", colorDim, colorReset)
-			fmt.Printf("      %sif command -v claude-sync &> /dev/null; then%s\n", colorDim, colorReset)
-			fmt.Printf("      %s  claude-sync pull --quiet &%s\n", colorDim, colorReset)
-			fmt.Printf("      %sfi%s\n", colorDim, colorReset)
-			fmt.Printf("      %strap 'claude-sync push --quiet' EXIT%s\n", colorDim, colorReset)
+			printInfo("Run 'claude-sync push' to upload your sessions")
+			printInfo("Run 'claude-sync pull' on other devices to sync")
 			fmt.Println()
 
 			return nil
@@ -379,8 +290,7 @@ passphrase on any device produces the same key, no file copying needed.`,
 	cmd.Flags().StringVar(&accessKey, "access-key", "", "R2 Access Key ID")
 	cmd.Flags().StringVar(&secretKey, "secret-key", "", "R2 Secret Access Key")
 	cmd.Flags().StringVar(&bucket, "bucket", "", "R2 Bucket Name")
-	cmd.Flags().BoolVar(&skipGuide, "skip-guide", false, "Skip the setup guide (for experienced users)")
-	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase (no file copying needed)")
+	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase")
 
 	return cmd
 }
