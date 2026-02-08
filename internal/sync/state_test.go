@@ -3,6 +3,7 @@ package sync
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -189,7 +190,7 @@ func TestGetLocalFiles(t *testing.T) {
 
 	// Check that plugins directory (empty) is not included
 	for path := range localFiles {
-		if filepath.HasPrefix(path, "plugins") {
+		if strings.HasPrefix(path, "plugins") {
 			t.Errorf("Empty plugins directory should not have files, but found: %s", path)
 		}
 	}

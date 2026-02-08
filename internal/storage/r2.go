@@ -29,14 +29,7 @@ type ObjectInfo struct {
 }
 
 func NewR2Client(cfg *appconfig.Config) (*R2Client, error) {
-	r2Resolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL: cfg.Endpoint,
-		}, nil
-	})
-
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
-		config.WithEndpointResolverWithOptions(r2Resolver),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.AccessKeyID,
 			cfg.SecretAccessKey,
@@ -48,7 +41,9 @@ func NewR2Client(cfg *appconfig.Config) (*R2Client, error) {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	client := s3.NewFromConfig(awsCfg)
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(cfg.Endpoint)
+	})
 
 	return &R2Client{
 		client: client,
