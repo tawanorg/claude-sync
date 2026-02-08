@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/tawanorg/claude-sync/compare/v0.1.1...v0.2.0) (2026-02-08)
+
+
+### Features
+
+* add reset command for forgot passphrase recovery ([3cd1cdb](https://github.com/tawanorg/claude-sync/commit/3cd1cdbd1964e108d312e2739fd4938f7a43eaf5))
+
 ## [0.1.1](https://github.com/tawanorg/claude-sync/compare/v0.1.0...v0.1.1) (2026-02-08)
 
 
