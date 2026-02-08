@@ -27,7 +27,7 @@
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
 
 <div align="center">
-<img src="assets/claude-sync.gif" alt="Claude Sync Demo" width="600">
+<img src="assets/claude-sync.gif" alt="Claude Sync Demo" width="100%">
 </div>
 
 ## Quick Start
