@@ -1,6 +1,29 @@
-# claude-sync
+<div align="center">
 
-Sync your Claude Code sessions across devices using Cloudflare R2 with end-to-end encryption.
+```
+   _____ _                 _        _____
+  / ____| |               | |      / ____|
+ | |    | | __ _ _   _  __| | ___ | (___  _   _ _ __   ___
+ | |    | |/ _` | | | |/ _` |/ _ \ \___ \| | | | '_ \ / __|
+ | |____| | (_| | |_| | (_| |  __/ ____) | |_| | | | | (__
+  \_____|_|\__,_|\__,_|\__,_|\___||_____/ \__, |_| |_|\___|
+                                           __/ |
+                                          |___/
+```
+
+**Sync your Claude Code sessions across all your devices**
+
+*End-to-end encrypted with [age](https://github.com/FiloSottile/age) • Stored on Cloudflare R2 (free tier)*
+
+[![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)
+[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Security](#security)
+
+</div>
+
+---
 
 ## Features
 
