@@ -1,3 +1,17 @@
+# [1.0.0](https://github.com/tawanorg/claude-sync/compare/v0.6.1...v1.0.0) (2026-02-08)
+
+
+### Features
+
+* add safety checks for pull with existing files ([87dad45](https://github.com/tawanorg/claude-sync/commit/87dad45894e634a9935458e5b8316864b7a7b23b))
+
+
+### BREAKING CHANGES
+
+* init --passphrase now only re-enters passphrase (keeps storage config)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
 ## [0.6.1](https://github.com/tawanorg/claude-sync/compare/v0.6.0...v0.6.1) (2026-02-08)
 
 
