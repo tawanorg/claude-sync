@@ -31,3 +31,4 @@ Thumbs.db
 
 # Local config (contains secrets)
 .claude-sync/
+.npmrc
