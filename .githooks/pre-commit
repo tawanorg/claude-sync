@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Run go fmt
+echo "Checking formatting..."
+UNFORMATTED=$(gofmt -l .)
+if [ -n "$UNFORMATTED" ]; then
+    echo "Error: The following files are not formatted:"
+    echo "$UNFORMATTED"
+    echo "Run 'go fmt ./...' to fix."
+    exit 1
+fi
+
+# Run go vet
+echo "Running go vet..."
+go vet ./...
+
+# Run tests
+echo "Running tests..."
+go test ./... -short
+
+# Run golangci-lint if available
+if command -v golangci-lint &> /dev/null; then
+    echo "Running golangci-lint..."
+    golangci-lint run --fast
+fi
+
+echo "All checks passed!"

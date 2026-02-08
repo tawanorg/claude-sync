@@ -22,11 +22,11 @@ type FileState struct {
 }
 
 type SyncState struct {
-	Files       map[string]*FileState `json:"files"`
-	LastSync    time.Time             `json:"last_sync"`
-	DeviceID    string                `json:"device_id"`
-	LastPush    time.Time             `json:"last_push,omitempty"`
-	LastPull    time.Time             `json:"last_pull,omitempty"`
+	Files    map[string]*FileState `json:"files"`
+	LastSync time.Time             `json:"last_sync"`
+	DeviceID string                `json:"device_id"`
+	LastPush time.Time             `json:"last_push,omitempty"`
+	LastPull time.Time             `json:"last_pull,omitempty"`
 }
 
 func LoadState() (*SyncState, error) {

@@ -1,4 +1,4 @@
-.PHONY: build install clean test fmt lint release-dry-run
+.PHONY: build install clean test fmt lint release-dry-run setup-hooks check
 
 BINARY_NAME=claude-sync
 VERSION?=0.2.1
@@ -58,3 +58,18 @@ deps:
 # Dry run semantic-release (requires npm packages)
 release-dry-run:
 	npx semantic-release --dry-run
+
+# Setup git hooks
+setup-hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed. Pre-commit will run tests and lint."
+
+# Run all checks (same as pre-commit)
+check:
+	@echo "Checking formatting..."
+	@test -z "$$(gofmt -l .)" || (echo "Run 'make fmt' to fix formatting" && exit 1)
+	@echo "Running go vet..."
+	$(GO) vet ./...
+	@echo "Running tests..."
+	$(GO) test ./... -short
+	@echo "All checks passed!"
