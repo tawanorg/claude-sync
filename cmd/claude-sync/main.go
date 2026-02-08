@@ -1192,8 +1192,8 @@ func replaceBinary(execPath string, newBinary []byte) error {
 
 	// Move new binary into place
 	if err := os.Rename(tmpPath, execPath); err != nil {
-		// Try to restore backup
-		os.Rename(backupPath, execPath)
+		// Try to restore backup (ignore error, we're already failing)
+		_ = os.Rename(backupPath, execPath)
 		return fmt.Errorf("failed to install new binary: %w", err)
 	}
 
@@ -1212,10 +1212,10 @@ func compareVersions(v1, v2 string) int {
 	for i := 0; i < 3; i++ {
 		var p1, p2 int
 		if i < len(parts1) {
-			fmt.Sscanf(parts1[i], "%d", &p1)
+			_, _ = fmt.Sscanf(parts1[i], "%d", &p1)
 		}
 		if i < len(parts2) {
-			fmt.Sscanf(parts2[i], "%d", &p2)
+			_, _ = fmt.Sscanf(parts2[i], "%d", &p2)
 		}
 
 		if p1 < p2 {

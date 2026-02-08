@@ -25,7 +25,7 @@ go test ./... -short
 # Run golangci-lint if available
 if command -v golangci-lint &> /dev/null; then
     echo "Running golangci-lint..."
-    golangci-lint run --fast
+    golangci-lint run
 fi
 
 echo "All checks passed!"
