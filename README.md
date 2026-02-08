@@ -26,6 +26,10 @@
 - **Self-updating**: `claude-sync update` to get the latest version
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
 
+<div align="center">
+<img src="assets/claude-sync.gif" alt="Claude Sync Demo" width="600">
+</div>
+
 ## Quick Start
 
 ### First Device
