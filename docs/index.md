@@ -33,9 +33,20 @@ Claude Sync provides:
 |---------|-------------|
 | **End-to-end encryption** | Files encrypted with [age](https://github.com/FiloSottile/age) before upload |
 | **Passphrase-based keys** | Same passphrase = same key on any device (no file copying) |
-| **Cloudflare R2 storage** | S3-compatible storage with 10GB free tier |
+| **Multi-cloud storage** | Cloudflare R2, Amazon S3, or Google Cloud Storage |
+| **Interactive wizard** | Arrow-key driven setup with validation |
 | **Conflict detection** | Automatic detection and resolution of concurrent edits |
 | **Self-updating** | Built-in version management |
+
+---
+
+## Supported Storage Providers
+
+| Provider | Free Tier | Best For |
+|----------|-----------|----------|
+| **Cloudflare R2** | 10GB storage, no egress fees | Personal use (recommended) |
+| **Amazon S3** | 5GB (12 months) | AWS users, enterprise |
+| **Google Cloud Storage** | 5GB | GCP users, enterprise |
 
 ---
 
@@ -44,10 +55,11 @@ Claude Sync provides:
 ### First Device
 
 ```bash
-# Install
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+# Install (pick one)
+npm install -g @tawandotorg/claude-sync
+# or: go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 
-# Set up (interactive)
+# Set up (interactive wizard)
 claude-sync init
 
 # Push your sessions
@@ -58,13 +70,53 @@ claude-sync push
 
 ```bash
 # Install
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+npm install -g @tawandotorg/claude-sync
 
-# Set up with SAME passphrase
+# Set up with SAME credentials and SAME passphrase
 claude-sync init
 
 # Pull sessions
 claude-sync pull
+```
+
+---
+
+## Installation Options
+
+### npm (Recommended)
+
+```bash
+# One-time use
+npx @tawandotorg/claude-sync init
+
+# Global install
+npm install -g @tawandotorg/claude-sync
+```
+
+### Go Install
+
+```bash
+go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+```
+
+### Download Binary
+
+Download from [GitHub Releases](https://github.com/tawanorg/claude-sync/releases):
+
+```bash
+# macOS ARM (M1/M2/M3)
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-darwin-arm64 -o claude-sync
+chmod +x claude-sync
+sudo mv claude-sync /usr/local/bin/
+
+# macOS Intel
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-darwin-amd64 -o claude-sync
+
+# Linux AMD64
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-linux-amd64 -o claude-sync
+
+# Linux ARM64
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-linux-arm64 -o claude-sync
 ```
 
 ---
@@ -80,6 +132,7 @@ claude-sync pull
 | `~/.claude/plugins/` | Plugins |
 | `~/.claude/rules/` | Custom rules |
 | `~/.claude/settings.json` | Settings |
+| `~/.claude/settings.local.json` | Local settings |
 | `~/.claude/CLAUDE.md` | Global instructions |
 
 ---
@@ -88,9 +141,9 @@ claude-sync pull
 
 | Command | Description |
 |---------|-------------|
-| `claude-sync init` | Interactive setup (R2 credentials + encryption) |
-| `claude-sync push` | Upload local changes to R2 |
-| `claude-sync pull` | Download remote changes from R2 |
+| `claude-sync init` | Interactive setup (provider selection + encryption) |
+| `claude-sync push` | Upload local changes to cloud storage |
+| `claude-sync pull` | Download remote changes from cloud storage |
 | `claude-sync status` | Show pending local changes |
 | `claude-sync diff` | Compare local and remote state |
 | `claude-sync conflicts` | List and resolve conflicts |
@@ -105,8 +158,62 @@ claude-sync pull -q          # Quiet mode
 claude-sync update --check   # Check for updates without installing
 claude-sync conflicts --list # List conflicts without resolving
 claude-sync conflicts --keep local|remote  # Auto-resolve conflicts
-claude-sync reset --remote   # Also delete R2 data
+claude-sync reset --remote   # Also delete cloud storage data
+claude-sync reset --local    # Also clear local sync state
 ```
+
+---
+
+## Provider Setup Guides
+
+### Cloudflare R2 (Recommended)
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → R2 Object Storage
+2. Create bucket → name it `claude-sync`
+3. Manage R2 API Tokens → Create API Token
+4. Select **Object Read & Write** permission
+
+**You'll need:**
+- Account ID (in dashboard URL)
+- Access Key ID
+- Secret Access Key
+- Bucket name
+
+### Amazon S3
+
+1. Go to [AWS S3 Console](https://s3.console.aws.amazon.com/)
+2. Create bucket → name it `claude-sync`
+3. IAM → Create access key for CLI access
+
+**You'll need:**
+- Access Key ID
+- Secret Access Key
+- AWS Region
+- Bucket name
+
+### Google Cloud Storage
+
+1. Go to [GCS Console](https://console.cloud.google.com/storage)
+2. Create bucket → name it `claude-sync`
+3. IAM → Create service account with Storage Object Admin role
+4. Download JSON key file (or use `gcloud auth application-default login`)
+
+**You'll need:**
+- Project ID
+- Credentials file (or use Application Default Credentials)
+- Bucket name
+
+---
+
+## Cost
+
+Claude sessions typically use < 50MB. Syncing is effectively **free** on any provider:
+
+| Provider | Free Tier |
+|----------|-----------|
+| **Cloudflare R2** | 10GB storage, 1M writes, 10M reads/month |
+| **AWS S3** | 5GB for 12 months (then ~$0.023/GB) |
+| **Google Cloud Storage** | 5GB, 5K writes, 50K reads/month |
 
 ---
 
@@ -117,9 +224,11 @@ claude-sync reset --remote   # Also delete R2 data
 | Language | Go 1.21+ | Cross-platform CLI |
 | Encryption | [age](https://github.com/FiloSottile/age) | Modern file encryption (X25519 + ChaCha20-Poly1305) |
 | KDF | Argon2id | Memory-hard passphrase derivation |
-| Storage | Cloudflare R2 | S3-compatible object storage |
+| Storage | R2 / S3 / GCS | S3-compatible object storage |
 | CLI Framework | [Cobra](https://github.com/spf13/cobra) | Command parsing |
+| Interactive UI | [Survey](https://github.com/AlecAivazis/survey) | Interactive prompts |
 | Config | YAML | Human-readable configuration |
+| Distribution | npm / Go / Binary | Multiple installation methods |
 
 ---
 

@@ -11,17 +11,16 @@ title: Architecture
 
 ## System Overview
 
-Claude Sync follows a **layered architecture** with clear separation of concerns:
+Claude Sync follows a **layered architecture** with a pluggable storage abstraction:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    CLI Layer                             │
-│         cmd/claude-sync/main.go (1200+ lines)           │
+│         cmd/claude-sync/main.go (~1500 lines)           │
 │                                                          │
 │  Commands: init, push, pull, status, diff, conflicts,   │
 │            reset, update, version                        │
-│  Responsibilities: User I/O, progress reporting,        │
-│                    interactive prompts, flag parsing     │
+│  UI: Interactive prompts (survey), progress reporting   │
 └────────────────────────┬────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────┐
@@ -30,9 +29,6 @@ Claude Sync follows a **layered architecture** with clear separation of concerns
 │                                                          │
 │  sync.go   - Syncer struct, push/pull orchestration     │
 │  state.go  - SyncState, FileState, change detection     │
-│                                                          │
-│  Responsibilities: Change detection, conflict handling,  │
-│                    state persistence, file operations    │
 └────────────────────────┬────────────────────────────────┘
                          │
            ┌─────────────┴─────────────┐
@@ -41,12 +37,16 @@ Claude Sync follows a **layered architecture** with clear separation of concerns
 │    Crypto Layer     │    │    Storage Layer       │
 │  internal/crypto/   │    │   internal/storage/    │
 │                     │    │                        │
-│  encrypt.go         │    │  r2.go                 │
-│  - Encrypt()        │    │  - R2Client            │
-│  - Decrypt()        │    │  - Upload()            │
-│  - GenerateKey()    │    │  - Download()          │
-│  - DeriveKey()      │    │  - List()              │
-│                     │    │  - Delete()            │
+│  encrypt.go         │    │  storage.go (interface)│
+│  - Encrypt()        │    │  config.go  (unified)  │
+│  - Decrypt()        │    │                        │
+│  - GenerateKey()    │    │  ┌─────────────────┐   │
+│  - DeriveKey()      │    │  │   Adapters      │   │
+│                     │    │  ├─────────────────┤   │
+│                     │    │  │ r2/r2.go        │   │
+│                     │    │  │ s3/s3.go        │   │
+│                     │    │  │ gcs/gcs.go      │   │
+│                     │    │  └─────────────────┘   │
 └──────────┬──────────┘    └───────────┬───────────┘
            │                           │
 ┌──────────▼───────────────────────────▼───────────┐
@@ -54,10 +54,100 @@ Claude Sync follows a **layered architecture** with clear separation of concerns
 │               internal/config/                    │
 │                                                   │
 │  config.go - YAML config, path resolution         │
-│  Paths: ~/.claude-sync/config.yaml                │
-│         ~/.claude-sync/age-key.txt                │
-│         ~/.claude-sync/state.json                 │
+│  Backward compatible with legacy R2-only format   │
 └──────────────────────────────────────────────────┘
+```
+
+---
+
+## Storage Abstraction
+
+The storage layer uses an **interface-based adapter pattern** to support multiple cloud providers:
+
+### Storage Interface
+
+```go
+// internal/storage/storage.go
+type Storage interface {
+    Upload(ctx context.Context, key string, data []byte) error
+    Download(ctx context.Context, key string) ([]byte, error)
+    Delete(ctx context.Context, key string) error
+    List(ctx context.Context, prefix string) ([]ObjectInfo, error)
+    Head(ctx context.Context, key string) (*ObjectInfo, error)
+    BucketExists(ctx context.Context) (bool, error)
+}
+```
+
+### Provider Adapters
+
+| Adapter | File | SDK Used |
+|---------|------|----------|
+| **R2** | `internal/storage/r2/r2.go` | AWS SDK v2 (S3-compatible) |
+| **S3** | `internal/storage/s3/s3.go` | AWS SDK v2 |
+| **GCS** | `internal/storage/gcs/gcs.go` | Google Cloud Storage SDK |
+
+### Unified Configuration
+
+```go
+// internal/storage/config.go
+type StorageConfig struct {
+    Provider Provider  // r2, s3, or gcs
+    Bucket   string
+
+    // R2/S3 common
+    AccessKeyID     string
+    SecretAccessKey string
+    Endpoint        string
+    Region          string
+
+    // R2-specific
+    AccountID string
+
+    // GCS-specific
+    ProjectID             string
+    CredentialsFile       string
+    CredentialsJSON       string
+    UseDefaultCredentials bool
+}
+```
+
+### Factory Pattern
+
+```go
+func New(cfg *StorageConfig) (Storage, error) {
+    switch cfg.Provider {
+    case ProviderR2:
+        return NewR2(cfg)
+    case ProviderS3:
+        return NewS3(cfg)
+    case ProviderGCS:
+        return NewGCS(cfg)
+    default:
+        return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
+    }
+}
+```
+
+### Adapter Registration
+
+Adapters self-register using Go's `init()` pattern:
+
+```go
+// internal/storage/r2/r2.go
+func init() {
+    storage.NewR2 = NewR2Adapter
+}
+```
+
+This allows the main binary to include only needed adapters via imports:
+
+```go
+// cmd/claude-sync/main.go
+import (
+    _ "github.com/tawanorg/claude-sync/internal/storage/gcs"
+    _ "github.com/tawanorg/claude-sync/internal/storage/r2"
+    _ "github.com/tawanorg/claude-sync/internal/storage/s3"
+)
 ```
 
 ---
@@ -66,18 +156,23 @@ Claude Sync follows a **layered architecture** with clear separation of concerns
 
 ### `cmd/claude-sync/main.go`
 
-The CLI entry point using [Cobra](https://github.com/spf13/cobra).
+The CLI entry point using [Cobra](https://github.com/spf13/cobra) and [Survey](https://github.com/AlecAivazis/survey).
 
 **Key Components:**
 - Command definitions (init, push, pull, etc.)
-- Interactive prompts for setup
-- Progress reporting with spinners and counts
-- Version management and self-update logic
+- Interactive provider wizards (`runR2Wizard`, `runS3Wizard`, `runGCSWizard`)
+- Progress reporting with ANSI colors
+- Self-update logic via GitHub API
 
-**Design Decisions:**
-- Single-file CLI keeps related command logic together
-- Interactive mode by default, quiet mode for scripting (`-q` flag)
-- Colors and spinners for better UX (disabled in non-TTY environments)
+**Interactive Wizards:**
+```
+init → Select Provider → Provider-specific wizard → Encryption setup → Test connection
+         ↓
+    ┌────┴────┬────────────┐
+    │         │            │
+   R2        S3          GCS
+  wizard    wizard      wizard
+```
 
 ### `internal/sync/`
 
@@ -86,19 +181,21 @@ Orchestrates synchronization operations.
 **sync.go - Syncer struct:**
 ```go
 type Syncer struct {
-    claudeDir   string     // ~/.claude
-    storage     *storage.R2Client
-    keyPath     string     // Path to age key
+    claudeDir   string           // ~/.claude
+    storage     storage.Storage  // Provider-agnostic interface
+    keyPath     string           // Path to age key
     state       *SyncState
-    statePath   string     // ~/.claude-sync/state.json
+    statePath   string           // ~/.claude-sync/state.json
+    quiet       bool
+    progressFn  func(ProgressEvent)
 }
 ```
 
 **Key Methods:**
-- `Push()` - Detect changes, encrypt, upload to R2
-- `Pull()` - Fetch remote state, download, decrypt
-- `Status()` - List pending local changes
-- `Diff()` - Compare local vs remote
+- `Push(ctx)` - Detect changes, encrypt, upload
+- `Pull(ctx)` - Fetch remote state, download, decrypt
+- `Status(ctx)` - List pending local changes
+- `Diff(ctx)` - Compare local vs remote
 
 **state.go - State Management:**
 ```go
@@ -107,7 +204,7 @@ type FileState struct {
     Hash     string    // SHA256 hash of file contents
     Size     int64     // File size in bytes
     ModTime  time.Time // Local modification time
-    Uploaded time.Time // When last pushed to R2
+    Uploaded time.Time // When last pushed to storage
 }
 
 type SyncState struct {
@@ -121,65 +218,35 @@ type SyncState struct {
 
 ### `internal/crypto/`
 
-Handles all encryption operations.
+Handles all encryption operations using the [age](https://github.com/FiloSottile/age) library.
 
 **Key Functions:**
 ```go
-// Generate random X25519 key pair
-func GenerateKey() (string, error)
-
-// Derive deterministic key from passphrase
-func DeriveKeyFromPassphrase(passphrase string) (string, error)
-
-// Encrypt file contents
+func GenerateKey(keyPath string) error
+func GenerateKeyFromPassphrase(keyPath, passphrase string) error
+func ValidatePassphraseStrength(passphrase string) error
+func KeyExists(keyPath string) bool
 func Encrypt(data []byte, keyPath string) ([]byte, error)
-
-// Decrypt file contents
 func Decrypt(data []byte, keyPath string) ([]byte, error)
-```
-
-**Encryption Flow:**
-1. Read age identity from key file
-2. Extract recipient (public key) from identity
-3. Encrypt using age with recipient
-4. Return encrypted bytes
-
-### `internal/storage/`
-
-S3-compatible client for Cloudflare R2.
-
-**R2Client struct:**
-```go
-type R2Client struct {
-    client *s3.Client
-    bucket string
-}
-```
-
-**Key Methods:**
-```go
-func (r *R2Client) Upload(key string, data []byte) error
-func (r *R2Client) Download(key string) ([]byte, error)
-func (r *R2Client) List(prefix string) ([]ObjectInfo, error)
-func (r *R2Client) Delete(key string) error
-func (r *R2Client) Exists(key string) (bool, error)
 ```
 
 ### `internal/config/`
 
-Configuration management.
+Configuration management with backward compatibility.
 
 **Config struct:**
 ```go
 type Config struct {
-    R2 R2Config `yaml:"r2"`
-}
+    // New format (preferred)
+    Storage *storage.StorageConfig `yaml:"storage,omitempty"`
 
-type R2Config struct {
-    AccountID  string `yaml:"account_id"`
-    AccessKey  string `yaml:"access_key"`
-    SecretKey  string `yaml:"secret_key"`
-    BucketName string `yaml:"bucket_name"`
+    // Legacy R2 fields (backward compatible)
+    AccountID       string `yaml:"account_id,omitempty"`
+    AccessKeyID     string `yaml:"access_key_id,omitempty"`
+    SecretAccessKey string `yaml:"secret_access_key,omitempty"`
+    Bucket          string `yaml:"bucket,omitempty"`
+
+    EncryptionKey string `yaml:"encryption_key_path"`
 }
 ```
 
@@ -209,20 +276,20 @@ Local Files (~/.claude/)
         │
         ▼
 ┌───────────────────┐
-│  Change Detection │  Compare current files with SyncState
-│  (hash, modtime)  │  Result: add/modify/delete lists
+│  Change Detection │  Compare with SyncState (hash, modtime)
+│                   │  Result: add/modify/delete lists
 └────────┬──────────┘
          │
          ▼
 ┌───────────────────┐
 │  Read & Encrypt   │  For each changed file:
-│  (age encryption) │  Read content → Encrypt → Bytes
+│  (age encryption) │  Read → Encrypt → Bytes
 └────────┬──────────┘
          │
          ▼
 ┌───────────────────┐
-│  Upload to R2     │  PUT object with .age extension
-│  (S3 API)         │  Key: original/path.age
+│  Upload via       │  storage.Upload(key, data)
+│  Storage Interface│  Provider handles specifics
 └────────┬──────────┘
          │
          ▼
@@ -235,12 +302,12 @@ Local Files (~/.claude/)
 ### Pull Operation
 
 ```
-R2 Storage
+Cloud Storage (via Storage interface)
         │
         ▼
 ┌───────────────────┐
-│  List Objects     │  GET all objects in bucket
-│  (S3 ListObjects) │  Compare with local state
+│  List Objects     │  storage.List("")
+│                   │  Compare with local state
 └────────┬──────────┘
          │
          ▼
@@ -251,14 +318,13 @@ R2 Storage
          │
          ▼
 ┌───────────────────┐
-│  Download &       │  GET object → Decrypt → Write
-│  Decrypt          │  Remove .age extension
+│  Download &       │  storage.Download(key) → Decrypt → Write
+│  Decrypt          │
 └────────┬──────────┘
          │
          ▼
 ┌───────────────────┐
 │  Update State     │  Record new hash, pull time
-│  (state.json)     │
 └───────────────────┘
 ```
 
@@ -268,8 +334,8 @@ R2 Storage
 
 ```
 ~/.claude-sync/
-├── config.yaml      # R2 credentials (0600 permissions)
-├── age-key.txt      # Encryption key (0600 permissions)
+├── config.yaml      # Storage + encryption config (0600)
+├── age-key.txt      # Encryption key (0600)
 └── state.json       # Sync state (file hashes, timestamps)
 
 ~/.claude/           # Claude Code directory (synced)
@@ -287,61 +353,87 @@ R2 Storage
 └── rules/
 ```
 
+### Config File Format (New)
+
+```yaml
+storage:
+  provider: r2           # or s3, gcs
+  bucket: claude-sync
+  account_id: abc123     # R2 only
+  access_key_id: AKIA...
+  secret_access_key: xxx
+  region: us-east-1      # S3 only
+  project_id: my-project # GCS only
+encryption_key_path: ~/.claude-sync/age-key.txt
+```
+
+### Config File Format (Legacy)
+
+```yaml
+# Still supported for backward compatibility
+account_id: abc123
+access_key_id: AKIA...
+secret_access_key: xxx
+bucket: claude-sync
+encryption_key_path: ~/.claude-sync/age-key.txt
+```
+
 ---
 
 ## Design Decisions
+
+### Why Interface-Based Storage?
+
+- **Flexibility**: Add new providers without changing sync logic
+- **Testability**: Mock storage for unit tests
+- **User Choice**: Different providers for different use cases
+- **Future-Proof**: Easy to add Azure Blob, MinIO, etc.
+
+### Why Adapter Self-Registration?
+
+- **Clean Imports**: Main package just imports adapters
+- **Optional Adapters**: Could build with subset of providers
+- **No Circular Deps**: Adapters depend on interface, not vice versa
 
 ### Why age for Encryption?
 
 - Modern, audited encryption (X25519 + ChaCha20-Poly1305)
 - Simple CLI and library interface
 - Deterministic key derivation support
-- Small ciphertext overhead (~16 bytes header + 16 bytes tag)
+- Small ciphertext overhead
 
 ### Why Argon2 for Key Derivation?
 
 - Memory-hard: resistant to GPU/ASIC attacks
-- Time-memory trade-off resistant
 - Winner of Password Hashing Competition
 - Parameters: 64MB memory, 3 iterations, 4 threads
-
-### Why Cloudflare R2?
-
-- S3-compatible API (reuse existing tooling)
-- Generous free tier (10GB storage)
-- No egress fees
-- Global edge network
 
 ### Why Hash-Based Change Detection?
 
 - More reliable than timestamps alone
-- Detects content changes regardless of touch/copy operations
-- SHA256 is fast enough for small files (typical < 1MB)
+- Detects content changes regardless of touch/copy
+- SHA256 is fast enough for small files
 
-### Why State File Instead of Remote Metadata?
+### Why Survey for Interactive UI?
 
-- Works offline (status command doesn't need network)
-- Faster change detection
-- Enables conflict detection by comparing local vs uploaded state
+- Rich prompt types (select, password, input)
+- Validation support
+- Cross-platform terminal support
+- Clean, intuitive UX
 
 ---
 
-## Error Handling
+## Dependencies
 
-The codebase uses Go's explicit error handling:
-
-```go
-// Errors bubble up with context
-if err := syncer.Push(); err != nil {
-    return fmt.Errorf("push failed: %w", err)
-}
-```
-
-**Common Error Scenarios:**
-- Network failures → Retry with backoff (not implemented, user retries)
-- Invalid credentials → Clear error message, suggest `claude-sync reset`
-- Encryption failures → Suggest passphrase mismatch
-- File permission issues → Report specific file and required permissions
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `filippo.io/age` | v1.3.1 | File encryption |
+| `golang.org/x/crypto/argon2` | v0.45.0+ | Key derivation |
+| `aws/aws-sdk-go-v2` | v1.41.1+ | R2/S3 storage |
+| `cloud.google.com/go/storage` | v1.50.0+ | GCS storage |
+| `spf13/cobra` | v1.10.2 | CLI framework |
+| `AlecAivazis/survey/v2` | v2.3.7 | Interactive prompts |
+| `gopkg.in/yaml.v3` | v3.0.1 | Config parsing |
 
 ---
 

@@ -18,7 +18,8 @@ Claude Sync is designed with the following security objectives:
 | **Confidentiality** | End-to-end encryption with age (X25519 + ChaCha20-Poly1305) |
 | **Integrity** | AEAD encryption (Poly1305 MAC) detects tampering |
 | **Key Portability** | Deterministic key derivation from passphrase |
-| **Minimal Trust** | R2 storage sees only encrypted blobs |
+| **Minimal Trust** | Cloud storage sees only encrypted blobs |
+| **Provider Agnostic** | Same encryption regardless of R2, S3, or GCS |
 
 ---
 
@@ -137,6 +138,7 @@ bech32.Encode("AGE-SECRET-KEY-", key)
 ```
 
 **Trade-offs:**
+
 | Mode | Pros | Cons |
 |------|------|------|
 | Passphrase | Same key on all devices, no file copying | Must remember passphrase |
@@ -150,14 +152,57 @@ All sensitive files are created with restrictive permissions:
 
 | File | Permissions | Contains |
 |------|-------------|----------|
-| `~/.claude-sync/config.yaml` | `0600` | R2 credentials |
+| `~/.claude-sync/config.yaml` | `0600` | Storage credentials |
 | `~/.claude-sync/age-key.txt` | `0600` | Encryption key |
 | `~/.claude-sync/state.json` | `0644` | File hashes (not sensitive) |
 
-**Permission Enforcement:**
-```go
-os.WriteFile(path, data, 0600)  // Owner read-write only
-```
+---
+
+## Provider Security
+
+### Transport Security
+
+All providers use TLS for transport:
+
+| Provider | Transport | Endpoint |
+|----------|-----------|----------|
+| **R2** | HTTPS | `{account}.r2.cloudflarestorage.com` |
+| **S3** | HTTPS | `s3.{region}.amazonaws.com` |
+| **GCS** | HTTPS | `storage.googleapis.com` |
+
+### Authentication
+
+| Provider | Method | Stored In |
+|----------|--------|-----------|
+| **R2** | Access Key + Secret | `config.yaml` (plaintext) |
+| **S3** | Access Key + Secret | `config.yaml` (plaintext) |
+| **GCS** | Service Account JSON or ADC | JSON file or system credentials |
+
+### Provider-Specific Notes
+
+**Cloudflare R2:**
+- No egress fees (cost-effective for sync)
+- S3-compatible API
+- Create scoped API token (Object Read & Write only)
+- Don't use root account credentials
+
+**Amazon S3:**
+- Use IAM user with minimal permissions:
+  ```json
+  {
+    "Effect": "Allow",
+    "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+    "Resource": ["arn:aws:s3:::claude-sync", "arn:aws:s3:::claude-sync/*"]
+  }
+  ```
+- Enable bucket versioning for recovery (optional)
+- Consider enabling server-side encryption (SSE-S3) as additional layer
+
+**Google Cloud Storage:**
+- Use service account with Storage Object Admin role
+- Prefer Application Default Credentials for local dev
+- Use Workload Identity for GKE deployments
+- Enable Object Versioning for recovery (optional)
 
 ---
 
@@ -167,11 +212,12 @@ os.WriteFile(path, data, 0600)  // Owner read-write only
 
 | Threat | Mitigation |
 |--------|------------|
-| **R2 breach** | Files are encrypted; attacker sees only ciphertext |
-| **Network interception** | HTTPS to R2; content is pre-encrypted |
-| **Cloudflare access** | Same as R2 breach; no plaintext access |
+| **Storage breach** | Files are encrypted; attacker sees only ciphertext |
+| **Network interception** | HTTPS to storage; content is pre-encrypted |
+| **Provider access** | Same as storage breach; no plaintext access |
 | **Lost device** | Key file is encrypted or derived from passphrase |
 | **Weak passphrase** | Argon2 makes brute-force expensive |
+| **Cross-provider portability** | Encryption is provider-agnostic |
 
 ### What Claude Sync Does NOT Protect Against
 
@@ -180,7 +226,8 @@ os.WriteFile(path, data, 0600)  // Owner read-write only
 | **Local malware** | If attacker has local access, they can read `~/.claude` |
 | **Compromised passphrase** | All devices become vulnerable |
 | **Targeted attack on your device** | Out of scope for sync tool |
-| **R2 credential theft** | Attacker can delete your encrypted files (but not read them) |
+| **Credential theft** | Attacker can delete encrypted files (but not read them) |
+| **Compromised service account** | Same as credential theft |
 
 ### Trust Boundaries
 
@@ -194,10 +241,51 @@ os.WriteFile(path, data, 0600)  // Owner read-write only
 
 ┌─────────────────────────────────────────────────────────┐
 │  UNTRUSTED (but used)                                   │
-│  - Cloudflare R2 storage                                │
-│  - Network between you and R2                           │
+│  - Cloud storage (R2, S3, GCS)                          │
+│  - Network between you and storage                      │
 │  - GitHub releases (verify signatures if paranoid)      │
 └─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Credential Security
+
+### Storing Credentials
+
+Credentials are stored in `~/.claude-sync/config.yaml`:
+
+```yaml
+storage:
+  provider: r2
+  bucket: claude-sync
+  account_id: abc123
+  access_key_id: AKIA...
+  secret_access_key: wJalrXUtnFEMI...  # Plaintext!
+```
+
+**Recommendations:**
+1. Use file permissions (0600) to restrict access
+2. For S3/R2: Create dedicated API keys with minimal scope
+3. For GCS: Use Application Default Credentials when possible
+4. Rotate credentials periodically
+
+### GCS Application Default Credentials
+
+For GCS, you can avoid storing credentials in config:
+
+```bash
+# Login with your Google account
+gcloud auth application-default login
+```
+
+Then in `config.yaml`:
+```yaml
+storage:
+  provider: gcs
+  bucket: claude-sync
+  project_id: my-project
+  use_default_credentials: true
 ```
 
 ---
@@ -206,7 +294,7 @@ os.WriteFile(path, data, 0600)  // Owner read-write only
 
 ### Strong Passphrase Guidelines
 
-1. **Length**: Minimum 16 characters (32+ recommended)
+1. **Length**: Minimum 8 characters (16+ recommended)
 2. **Randomness**: Use a password manager to generate
 3. **Uniqueness**: Don't reuse from other services
 
@@ -241,7 +329,7 @@ Since the passphrase is never stored by Claude Sync:
 # 1. Reset local configuration
 claude-sync reset
 
-# 2. Optionally delete unrecoverable R2 data
+# 2. Optionally delete unrecoverable storage data
 claude-sync reset --remote
 
 # 3. Set up again with new passphrase
@@ -253,7 +341,7 @@ claude-sync push
 
 ### Lost Key File (Random Mode)?
 
-Same as forgot passphrase—encrypted R2 files are unrecoverable.
+Same as forgot passphrase—encrypted storage files are unrecoverable.
 
 **Prevention:**
 1. Back up `~/.claude-sync/age-key.txt` securely
@@ -268,7 +356,7 @@ Same as forgot passphrase—encrypted R2 files are unrecoverable.
 | Library | Version | Purpose |
 |---------|---------|---------|
 | `filippo.io/age` | v1.3.1 | File encryption |
-| `golang.org/x/crypto/argon2` | v0.45.0 | Key derivation |
+| `golang.org/x/crypto/argon2` | v0.45.0+ | Key derivation |
 | `btcsuite/btcd/btcutil/bech32` | v1.1.6 | Key encoding |
 
 ### Verification
@@ -290,20 +378,32 @@ diff test.txt test-decrypted.txt
 
 ## Security Checklist
 
-Before using Claude Sync:
+### Before Using Claude Sync
 
-- [ ] Created R2 bucket with API token (not root credentials)
+- [ ] Created storage bucket with API token (not root credentials)
 - [ ] Used strong passphrase (16+ characters, random)
 - [ ] Verified config files have `0600` permissions
 - [ ] Stored passphrase in password manager
 - [ ] Tested push/pull on a non-critical device first
 
-Ongoing:
+### For S3/R2 Users
+
+- [ ] Created IAM user/API token with minimal permissions
+- [ ] Enabled bucket-level access logging (optional)
+- [ ] Considered enabling bucket versioning
+
+### For GCS Users
+
+- [ ] Used service account with Storage Object Admin only
+- [ ] Considered using Application Default Credentials
+- [ ] Enabled Object Versioning (optional)
+
+### Ongoing
 
 - [ ] Don't share passphrase or key file
 - [ ] Use `claude-sync update` to get security fixes
 - [ ] Periodically review synced content for sensitive data
-- [ ] Rotate R2 API keys if compromised
+- [ ] Rotate storage credentials if compromised
 
 ---
 

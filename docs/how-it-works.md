@@ -11,87 +11,136 @@ title: How It Works
 
 ## Initialization
 
-When you run `claude-sync init`, the following happens:
+When you run `claude-sync init`, an interactive wizard guides you through setup:
 
-### Step 1: Gather R2 Credentials
+### Step 1: Select Storage Provider
 
 ```
-┌─────────────────────────────────────────────┐
-│  Interactive Prompts                        │
-├─────────────────────────────────────────────┤
-│  1. Cloudflare Account ID                   │
-│  2. R2 Access Key ID                        │
-│  3. R2 Secret Access Key                    │
-│  4. Bucket Name                             │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  ? Choose your cloud storage provider:                  │
+│  > Cloudflare R2 (recommended - free tier: 10GB)        │
+│    Amazon S3                                            │
+│    Google Cloud Storage                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Step 2: Provider-Specific Credentials
+
+**Cloudflare R2:**
+```
+┌─────────────────────────────────────────┐
+│  Cloudflare R2 Setup                    │
+├─────────────────────────────────────────┤
+│  ? Account ID: abc123def               │
+│  ? Access Key ID: xxxxxxxxxx           │
+│  ? Secret Access Key: **************** │
+│  ? Bucket name: claude-sync             │
+└─────────────────────────────────────────┘
+```
+
+**Amazon S3:**
+```
+┌─────────────────────────────────────────┐
+│  Amazon S3 Setup                        │
+├─────────────────────────────────────────┤
+│  ? Access Key ID: AKIAXXXXXXX          │
+│  ? Secret Access Key: **************** │
+│  ? AWS Region: us-east-1               │
+│  ? Bucket name: claude-sync             │
+└─────────────────────────────────────────┘
+```
+
+**Google Cloud Storage:**
+```
+┌─────────────────────────────────────────┐
+│  Google Cloud Storage Setup             │
+├─────────────────────────────────────────┤
+│  ? GCP Project ID: my-project-123      │
+│  ? Authentication method:               │
+│    > Application Default Credentials    │
+│      Service Account JSON file          │
+│  ? Bucket name: claude-sync             │
+└─────────────────────────────────────────┘
+```
+
+### Step 3: Encryption Setup
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ? Choose encryption key method:                        │
+│  > Passphrase (recommended) - same key on all devices   │
+│    Random key - must copy key file to other devices     │
+└─────────────────────────────────────────────────────────┘
                     │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  Validate Credentials                        │
-│  - Attempt to list bucket contents          │
-│  - Verify read/write permissions            │
-└─────────────────────────────────────────────┘
+                    ▼ (if passphrase)
+┌─────────────────────────────────────────────────────────┐
+│  ? Passphrase (min 8 chars): ********                   │
+│  ? Confirm passphrase: ********                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Step 2: Generate Encryption Key
+### Step 4: Test Connection
 
-**Option 1: Passphrase (Recommended)**
 ```
-Passphrase Input
-       │
-       ▼
-┌──────────────────────────────────────┐
-│  Salt = SHA256("claude-sync-v1")     │  Fixed salt for reproducibility
-└──────────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────┐
-│  Argon2id KDF                        │
-│  - Memory: 64 MB                     │
-│  - Iterations: 3                     │
-│  - Threads: 4                        │
-│  - Output: 32 bytes                  │
-└──────────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────┐
-│  Scalar Clamping (RFC 7748)          │
-│  Required for X25519 compatibility   │
-└──────────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────┐
-│  Bech32 Encode                       │
-│  Prefix: AGE-SECRET-KEY-             │
-└──────────────────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────┐
-│  Write to ~/.claude-sync/age-key.txt │
-│  Permissions: 0600                   │
-└──────────────────────────────────────┘
+[3/3] Test Connection
+  ✓ Connected to 'claude-sync'
+
+  Setup complete!
+
+      Run 'claude-sync push' to upload your sessions
+      Run 'claude-sync pull' on other devices to sync
 ```
 
-**Option 2: Random Key**
-```
-crypto/rand.Read(32 bytes)
-       │
-       ▼
-X25519 Scalar Clamping
-       │
-       ▼
-Bech32 Encode → ~/.claude-sync/age-key.txt
-```
+---
 
-### Step 3: Save Configuration
+## Key Derivation (Passphrase Mode)
 
-```yaml
-# ~/.claude-sync/config.yaml
-r2:
-  account_id: "your-account-id"
-  access_key: "your-access-key"
-  secret_key: "your-secret-key"
-  bucket_name: "claude-sync"
+When you choose passphrase-based encryption:
+
+```
+Passphrase: "my-secret-phrase"
+                │
+                ▼
+┌────────────────────────────────────────────────────────┐
+│  Salt Generation                                        │
+│  salt = SHA256("claude-sync-v1")                       │
+│  = fixed 32 bytes                                       │
+│                                                         │
+│  Why fixed salt?                                        │
+│  - Same passphrase on different devices = same key     │
+│  - No need to sync salt between devices                │
+└────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌────────────────────────────────────────────────────────┐
+│  Argon2id KDF                                           │
+│                                                         │
+│  Parameters:                                            │
+│  - Memory: 64 MB                                        │
+│  - Iterations: 3                                        │
+│  - Parallelism: 4 threads                               │
+│  - Output: 32 bytes                                     │
+└────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌────────────────────────────────────────────────────────┐
+│  Scalar Clamping (RFC 7748)                             │
+│                                                         │
+│  key[0] &= 248                                          │
+│  key[31] &= 127                                         │
+│  key[31] |= 64                                          │
+│                                                         │
+│  Required for X25519 security                           │
+└────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌────────────────────────────────────────────────────────┐
+│  Bech32 Encoding                                        │
+│  Prefix: AGE-SECRET-KEY-1                               │
+│  Output: age-compatible secret key string              │
+│                                                         │
+│  Saved to: ~/.claude-sync/age-key.txt                  │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -105,9 +154,9 @@ When you run `claude-sync push`:
 ```go
 for each path in SyncPaths {
     if isDirectory(path) {
-        walkDirectory(path)
+        walkDirectory(path)  // Recursively check files
     } else if isFile(path) {
-        checkFile(path)
+        checkFile(path)      // Compare with state
     }
 }
 ```
@@ -130,20 +179,10 @@ for each path in SyncPaths {
 └─────────────────────────────────────┘
 ```
 
-**Result:**
-```go
-type ChangeSet struct {
-    Add    []string  // New files
-    Modify []string  // Changed files
-    Delete []string  // Removed files
-}
-```
-
 ### Phase 2: Upload
 
-For each file to add or modify:
-
 ```
+For each file to upload:
 ┌─────────────────────────────────────┐
 │  Read local file                     │
 │  path: ~/.claude/projects/foo/x.json │
@@ -153,27 +192,35 @@ For each file to add or modify:
 ┌─────────────────────────────────────┐
 │  Encrypt with age                    │
 │  - Read identity from age-key.txt   │
-│  - Encrypt to recipient (public key)│
-│  - Output: encrypted bytes          │
+│  - Extract recipient (public key)   │
+│  - Encrypt content                  │
 └─────────────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────────────┐
-│  Upload to R2                        │
-│  Key: projects/foo/x.json.age        │
-│  Content-Type: application/octet    │
+│  Upload via Storage interface        │
+│  storage.Upload("path.age", data)   │
+│                                      │
+│  Provider-specific implementation:  │
+│  - R2: S3 PutObject to Cloudflare   │
+│  - S3: S3 PutObject to AWS          │
+│  - GCS: Objects.Insert              │
 └─────────────────────────────────────┘
 ```
 
-For each file to delete:
+### Phase 3: Progress Reporting
+
 ```
-┌─────────────────────────────────────┐
-│  Delete from R2                      │
-│  Key: original/path.age             │
-└─────────────────────────────────────┘
+↑ [1/5] projects/abc123/session.json (4.2 KB)
+↑ [2/5] settings.json (512 B)
+↑ [3/5] CLAUDE.md (1.1 KB)
+✗ [4/5] history.jsonl (deleted)
+↑ [5/5] agents/custom.json (2.3 KB)
+
+✓ Push complete: 4 uploaded, 1 deleted
 ```
 
-### Phase 3: Update State
+### Phase 4: Update State
 
 ```go
 state.Files[path] = &FileState{
@@ -197,16 +244,20 @@ When you run `claude-sync pull`:
 
 ```
 ┌─────────────────────────────────────┐
-│  R2 ListObjects                      │
-│  - Get all objects in bucket        │
-│  - Returns: key, size, lastModified │
+│  storage.List("")                    │
+│                                      │
+│  Returns all objects in bucket:     │
+│  - Key (path.age)                   │
+│  - Size                             │
+│  - LastModified                     │
+│  - ETag                             │
 └─────────────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────────────┐
-│  Build remote file list              │
+│  Build remote file map              │
 │  Strip .age extension               │
-│  e.g., "foo.json.age" → "foo.json"  │
+│  "foo.json.age" → "foo.json"       │
 └─────────────────────────────────────┘
 ```
 
@@ -242,7 +293,13 @@ When both local and remote have changed:
 ```
 ┌─────────────────────────────────────┐
 │  Download remote file                │
+│  storage.Download("path.age")       │
+└─────────────────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────┐
 │  Decrypt content                     │
+│  (age decryption)                   │
 └─────────────────────────────────────┘
                 │
                 ▼
@@ -260,38 +317,39 @@ For non-conflict files:
 
 ```
 ┌─────────────────────────────────────┐
-│  Download from R2                    │
-│  Key: path.age                       │
+│  storage.Download("path.age")       │
+│  Returns encrypted bytes            │
 └─────────────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────────────┐
 │  Decrypt with age                    │
 │  - Read identity from age-key.txt   │
-│  - Decrypt encrypted bytes          │
-│  - Output: original content         │
+│  - Decrypt bytes → plaintext        │
 └─────────────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────────────┐
 │  Write to local file                 │
 │  path: ~/.claude/{path}             │
-│  Preserve directory structure        │
+│  Create parent directories           │
 └─────────────────────────────────────┘
 ```
 
-### Phase 5: Update State
+### Phase 5: Progress Reporting
 
-```go
-state.Files[path] = &FileState{
-    Path:     path,
-    Hash:     newHash,
-    Size:     newSize,
-    ModTime:  time.Now(),
-    Uploaded: remoteModTime,
-}
-state.LastPull = time.Now()
-state.Save()
+```
+↓ [1/3] projects/xyz789/session.json (8.5 KB)
+↓ [2/3] skills/custom-skill.json (1.2 KB)
+⚠ Conflict: settings.json (saved as .conflict)
+
+✓ Pull complete: 2 downloaded, 1 conflicts
+
+Conflicts (both local and remote changed):
+  • settings.json
+
+Local versions kept. Remote saved as .conflict files.
+Run 'claude-sync conflicts' to review and resolve.
 ```
 
 ---
@@ -306,20 +364,43 @@ A conflict occurs when:
 
 ### Resolution Options
 
+**Interactive mode (default):**
 ```bash
-# Interactive mode (default)
 claude-sync conflicts
 
-# Available actions:
-# [l] Keep local version (delete conflict file)
-# [r] Keep remote version (replace local with conflict file)
-# [d] Show diff between versions
-# [s] Skip this conflict
-# [q] Quit resolution
+Found 2 conflict(s):
+
+  1. settings.json
+     Conflict from: 20260208-153045
+
+  2. projects/abc123/session.json
+     Conflict from: 20260208-154512
+
+For each conflict, choose how to resolve:
+  [l] Keep local  [r] Keep remote  [d] Show diff  [s] Skip  [q] Quit
+
+[1/2] settings.json
+        Local: 512 B  |  Remote: 498 B  |  Conflict from: 20260208-153045
+        Resolve [l/r/d/s/q]: d
+
+        --- Local
+        +++ Remote (conflict)
+
+        @@ -1,5 +1,5 @@
+         {
+        -  "theme": "dark",
+        +  "theme": "light",
+           "autoSave": true
+         }
+
+        Resolve [l/r/d/s/q]: l
+        ✓ Kept local version
+
+✓ Resolved 1 of 2 conflict(s)
 ```
 
+**Batch mode:**
 ```bash
-# Batch mode
 claude-sync conflicts --keep local   # Keep all local versions
 claude-sync conflicts --keep remote  # Keep all remote versions
 ```
@@ -357,14 +438,14 @@ claude-sync conflicts --keep remote  # Keep all remote versions
   "files": {
     "projects/abc123/session.json": {
       "path": "projects/abc123/session.json",
-      "hash": "sha256:a1b2c3...",
+      "hash": "sha256:a1b2c3d4e5f6...",
       "size": 4096,
       "modTime": "2026-02-08T10:30:00Z",
       "uploaded": "2026-02-08T10:31:00Z"
     },
     "settings.json": {
       "path": "settings.json",
-      "hash": "sha256:d4e5f6...",
+      "hash": "sha256:9f8e7d6c5b4a...",
       "size": 512,
       "modTime": "2026-02-07T15:00:00Z",
       "uploaded": "2026-02-07T15:01:00Z"
@@ -379,7 +460,7 @@ claude-sync conflicts --keep remote  # Keep all remote versions
 
 ### Why Track State?
 
-1. **Efficient Change Detection**: Compare hashes without reading R2
+1. **Efficient Change Detection**: Compare hashes without reading storage
 2. **Conflict Detection**: Know if local changed since last sync
 3. **Offline Status**: `claude-sync status` works without network
 4. **Device Tracking**: Identify which device last synced
@@ -400,16 +481,16 @@ When you run `claude-sync update`:
                 ▼
 ┌─────────────────────────────────────┐
 │  Compare versions                    │
-│  Current: from git describe --tags   │
+│  Current: from build ldflags        │
 │  Latest: from GitHub release         │
 └─────────────────────────────────────┘
                 │
-                ▼
+                ▼ (if update available)
 ┌─────────────────────────────────────┐
 │  Download binary                     │
 │  Based on GOOS/GOARCH:               │
-│  - darwin-arm64 (M1/M2/M3)          │
-│  - darwin-amd64 (Intel Mac)          │
+│  - darwin-arm64                      │
+│  - darwin-amd64                      │
 │  - linux-amd64                       │
 │  - linux-arm64                       │
 └─────────────────────────────────────┘
@@ -417,11 +498,45 @@ When you run `claude-sync update`:
                 ▼
 ┌─────────────────────────────────────┐
 │  Replace binary                      │
-│  1. Rename current → current.old    │
-│  2. Write new binary                 │
-│  3. chmod +x                         │
+│  1. Write new binary as .new        │
+│  2. Rename current → .old           │
+│  3. Rename .new → current           │
+│  4. Delete .old                     │
 └─────────────────────────────────────┘
 ```
+
+**Output:**
+```
+⋯ Checking for updates...
+↑ New version available: v0.3.2 → v0.4.0
+⋯ Downloading claude-sync-darwin-arm64...
+⋯ Installing update...
+✓ Updated to v0.4.0
+
+Restart claude-sync to use the new version
+```
+
+---
+
+## Shell Integration
+
+For automatic syncing, add to your shell profile:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+
+# Auto-pull on shell start (background, quiet)
+if command -v claude-sync &> /dev/null; then
+  claude-sync pull -q &
+fi
+
+# Auto-push on shell exit (quiet)
+trap 'claude-sync push -q' EXIT
+```
+
+This ensures:
+- Fresh sessions are pulled when you start a terminal
+- Local changes are pushed when you close a terminal
 
 ---
 
