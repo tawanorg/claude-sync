@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/tawanorg/claude-sync/compare/v0.3.0...v0.3.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* handle unchecked error returns for linter ([2390505](https://github.com/tawanorg/claude-sync/commit/23905053d96612b43314e4291df644f6bc7763af))
+
 # [0.3.0](https://github.com/tawanorg/claude-sync/compare/v0.2.1...v0.3.0) (2026-02-08)
 
 
