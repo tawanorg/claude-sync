@@ -1,3 +1,16 @@
+# [0.5.0](https://github.com/tawanorg/claude-sync/compare/v0.4.1...v0.5.0) (2026-02-08)
+
+
+### Bug Fixes
+
+* bust GitHub cache for banner image ([d5738fd](https://github.com/tawanorg/claude-sync/commit/d5738fda033f027077b78e89ca1648302886cc68))
+* fetch latest version from GitHub API during npm install ([fcfd2ce](https://github.com/tawanorg/claude-sync/commit/fcfd2ce6ef324ef1f9c91a55b941fc8b0712267e))
+
+
+### Features
+
+* publish to GitHub Packages ([e04f65b](https://github.com/tawanorg/claude-sync/commit/e04f65bf342516972885a74b01acdcb99bb5e0aa))
+
 ## [0.4.1](https://github.com/tawanorg/claude-sync/compare/v0.4.0...v0.4.1) (2026-02-08)
 
 
