@@ -121,9 +121,10 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 
 // encodeAgeIdentity encodes a 32-byte scalar as an age identity string
 func encodeAgeIdentity(scalar []byte) string {
-	// age uses Bech32 encoding with HRP "age-secret-key-"
-	// The encoding is lowercase bech32
-	const charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+	// age uses Bech32 encoding with HRP "AGE-SECRET-KEY-" (uppercase)
+	// The checksum must be computed with the uppercase HRP
+	const charset = "QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L"
+	hrp := "AGE-SECRET-KEY-"
 
 	// Convert to 5-bit groups
 	var data []int
@@ -141,14 +142,13 @@ func encodeAgeIdentity(scalar []byte) string {
 		data = append(data, (acc<<(5-bits))&31)
 	}
 
-	// Calculate checksum
-	hrp := "age-secret-key-"
+	// Calculate checksum with uppercase HRP
 	checksum := bech32Checksum(hrp, data)
 	data = append(data, checksum...)
 
 	// Encode
 	var result strings.Builder
-	result.WriteString(strings.ToUpper(hrp))
+	result.WriteString(hrp)
 	result.WriteString("1") // separator
 	for _, d := range data {
 		result.WriteByte(charset[d])
