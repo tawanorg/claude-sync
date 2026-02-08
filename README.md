@@ -54,7 +54,10 @@ npm install -g @tawandotorg/claude-sync
 # Set up with SAME storage credentials and SAME passphrase
 claude-sync init
 
-# Pull sessions
+# Preview what would be synced
+claude-sync pull --dry-run
+
+# Pull sessions (creates backup if you have existing files)
 claude-sync pull
 ```
 
@@ -155,6 +158,22 @@ claude-sync update      # Update to latest version
 claude-sync --help      # Show all commands
 ```
 
+### Pull Options
+
+```bash
+claude-sync pull              # Normal pull (prompts if existing files)
+claude-sync pull --dry-run    # Preview what would change
+claude-sync pull --force      # Skip confirmation prompts
+```
+
+### Init Options
+
+```bash
+claude-sync init              # Full setup wizard
+claude-sync init --passphrase # Re-enter passphrase only (keeps storage config)
+claude-sync init --force      # Reset everything, start fresh
+```
+
 ### Quiet Mode
 
 ```bash
@@ -183,6 +202,25 @@ fi
 trap 'claude-sync push -q' EXIT
 ```
 
+## Pulling with Existing Files
+
+When you pull on a device that already has `~/.claude` files, claude-sync will:
+
+1. **Show what would change** - files that would be overwritten, kept, or downloaded
+2. **Ask for confirmation** - choose to backup, overwrite, or abort
+3. **Create a backup** - saves existing files to `~/.claude.backup.{timestamp}`
+
+```bash
+# Preview first
+claude-sync pull --dry-run
+
+# Pull with prompts
+claude-sync pull
+
+# Skip prompts (for scripts)
+claude-sync pull --force
+```
+
 ## Conflict Resolution
 
 When both local and remote files change, the remote version is saved as `.conflict`:
@@ -200,6 +238,17 @@ Interactive options:
 - **[d]** Show diff
 - **[s]** Skip
 - **[q]** Quit
+
+## Wrong Passphrase?
+
+If you entered the wrong passphrase on a new device:
+
+```bash
+# Re-enter passphrase (keeps your storage config)
+claude-sync init --passphrase
+```
+
+The init will verify your passphrase can decrypt remote files before completing.
 
 ## Forgot Passphrase?
 
