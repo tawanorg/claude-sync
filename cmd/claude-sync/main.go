@@ -108,20 +108,6 @@ func printWarning(text string) {
 	fmt.Printf("  %s%s%s\n", colorYellow, text, colorReset)
 }
 
-func promptInput(reader *bufio.Reader, prompt string, defaultVal string) string {
-	if defaultVal != "" {
-		fmt.Printf("      %s [%s]: ", prompt, defaultVal)
-	} else {
-		fmt.Printf("      %s: ", prompt)
-	}
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	if input == "" && defaultVal != "" {
-		return defaultVal
-	}
-	return input
-}
-
 func initCmd() *cobra.Command {
 	var provider, bucket string
 	var usePassphrase bool
