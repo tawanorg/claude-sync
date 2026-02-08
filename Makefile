@@ -1,4 +1,4 @@
-.PHONY: build install clean test fmt lint
+.PHONY: build install clean test fmt lint release-dry-run
 
 BINARY_NAME=claude-sync
 VERSION?=0.1.0
@@ -54,3 +54,7 @@ run: build
 deps:
 	$(GO) mod download
 	$(GO) mod tidy
+
+# Dry run semantic-release (requires npm packages)
+release-dry-run:
+	npx semantic-release --dry-run

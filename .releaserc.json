@@ -1,0 +1,23 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    ["@semantic-release/exec", {
+      "prepareCmd": "sed -i '' 's/version = \"[^\"]*\"/version = \"${nextRelease.version}\"/' cmd/claude-sync/main.go && sed -i '' 's/VERSION?=[^ ]*/VERSION?=${nextRelease.version}/' Makefile"
+    }],
+    ["@semantic-release/git", {
+      "assets": ["CHANGELOG.md", "cmd/claude-sync/main.go", "Makefile"],
+      "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+    }],
+    ["@semantic-release/github", {
+      "assets": [
+        {"path": "bin/claude-sync-darwin-arm64", "label": "claude-sync-darwin-arm64"},
+        {"path": "bin/claude-sync-darwin-amd64", "label": "claude-sync-darwin-amd64"},
+        {"path": "bin/claude-sync-linux-amd64", "label": "claude-sync-linux-amd64"},
+        {"path": "bin/claude-sync-linux-arm64", "label": "claude-sync-linux-arm64"}
+      ]
+    }]
+  ]
+}
