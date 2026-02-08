@@ -7,8 +7,8 @@
 *Encrypted with [age](https://github.com/FiloSottile/age) • R2 / S3 / GCS supported*
 
 [![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)
-[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@tawandotorg/claude-sync)](https://www.npmjs.com/package/@tawandotorg/claude-sync)
 
 [Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Security](#security)
 
@@ -233,47 +233,46 @@ Claude sessions typically use < 50MB. Syncing is effectively **free** on any pro
 
 ### npm (recommended)
 
-```bash
-# One-time use
-npx @tawandotorg/claude-sync init
+**Prerequisite:** Node.js 14+ (no Go required - downloads pre-compiled binary)
 
+```bash
 # Global install
 npm install -g @tawandotorg/claude-sync
-```
 
-### Go Install
-
-```bash
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
-```
-
-### Build Manually
-
-```bash
-git clone https://github.com/tawanorg/claude-sync
-cd claude-sync
-make build
-./bin/claude-sync --version
+# Or one-time use
+npx @tawandotorg/claude-sync init
 ```
 
 ### Download Binary
 
-Download from [GitHub Releases](https://github.com/tawanorg/claude-sync/releases):
+**Prerequisite:** None
 
 ```bash
 # macOS ARM (M1/M2/M3)
 curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-darwin-arm64 -o claude-sync
 chmod +x claude-sync
 sudo mv claude-sync /usr/local/bin/
+```
 
-# macOS Intel
-curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-darwin-amd64 -o claude-sync
+See [GitHub Releases](https://github.com/tawanorg/claude-sync/releases) for all platforms.
 
-# Linux AMD64
-curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-linux-amd64 -o claude-sync
+### Go Install
 
-# Linux ARM64
-curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-linux-arm64 -o claude-sync
+**Prerequisite:** Go 1.21+ (for developers)
+
+```bash
+go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+```
+
+### Build from Source
+
+**Prerequisite:** Go 1.21+
+
+```bash
+git clone https://github.com/tawanorg/claude-sync
+cd claude-sync
+make build
+./bin/claude-sync --version
 ```
 
 ## Development
