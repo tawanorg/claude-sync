@@ -13,7 +13,7 @@
 
 **Sync your Claude Code sessions across all your devices**
 
-*End-to-end encrypted with [age](https://github.com/FiloSottile/age) • Stored on Cloudflare R2 (free tier)*
+*End-to-end encrypted with [age](https://github.com/FiloSottile/age) • Stored on Cloudflare R2*
 
 [![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev)
