@@ -1796,13 +1796,16 @@ func clearRemoteStorage(ctx context.Context, store storage.Storage) error {
 		return fmt.Errorf("failed to list remote files: %w", err)
 	}
 
-	for _, obj := range objects {
-		if err := store.Delete(ctx, obj.Key); err != nil {
-			return fmt.Errorf("failed to delete %s: %w", obj.Key, err)
-		}
+	if len(objects) == 0 {
+		return nil
 	}
 
-	return nil
+	keys := make([]string, len(objects))
+	for i, obj := range objects {
+		keys[i] = obj.Key
+	}
+
+	return store.DeleteBatch(ctx, keys)
 }
 
 // hasExistingClaudeFiles checks if ~/.claude has any files that would be synced

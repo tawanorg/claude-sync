@@ -10,6 +10,7 @@ type MockStorage struct {
 	UploadFunc       func(ctx context.Context, key string, data []byte) error
 	DownloadFunc     func(ctx context.Context, key string) ([]byte, error)
 	DeleteFunc       func(ctx context.Context, key string) error
+	DeleteBatchFunc  func(ctx context.Context, keys []string) error
 	ListFunc         func(ctx context.Context, prefix string) ([]ObjectInfo, error)
 	HeadFunc         func(ctx context.Context, key string) (*ObjectInfo, error)
 	BucketExistsFunc func(ctx context.Context) (bool, error)
@@ -32,6 +33,13 @@ func (m *MockStorage) Download(ctx context.Context, key string) ([]byte, error) 
 func (m *MockStorage) Delete(ctx context.Context, key string) error {
 	if m.DeleteFunc != nil {
 		return m.DeleteFunc(ctx, key)
+	}
+	return nil
+}
+
+func (m *MockStorage) DeleteBatch(ctx context.Context, keys []string) error {
+	if m.DeleteBatchFunc != nil {
+		return m.DeleteBatchFunc(ctx, keys)
 	}
 	return nil
 }

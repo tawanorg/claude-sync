@@ -34,6 +34,9 @@ type Storage interface {
 	// Delete removes the object with the given key
 	Delete(ctx context.Context, key string) error
 
+	// DeleteBatch removes multiple objects in a single operation
+	DeleteBatch(ctx context.Context, keys []string) error
+
 	// List returns all objects with the given prefix
 	List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 

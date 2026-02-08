@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/tawanorg/claude-sync/internal/storage"
 )
@@ -95,6 +96,43 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete %s: %w", key, err)
 	}
+	return nil
+}
+
+// DeleteBatch removes multiple objects in a single operation
+func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	const maxBatchSize = 1000
+
+	for i := 0; i < len(keys); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+
+		batch := keys[i:end]
+		objects := make([]types.ObjectIdentifier, len(batch))
+		for j, key := range batch {
+			objects[j] = types.ObjectIdentifier{
+				Key: aws.String(key),
+			}
+		}
+
+		_, err := c.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(c.bucket),
+			Delete: &types.Delete{
+				Objects: objects,
+				Quiet:   aws.Bool(true),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete batch: %w", err)
+		}
+	}
+
 	return nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"cloud.google.com/go/storage"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
@@ -93,6 +94,30 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("failed to delete %s: %w", key, err)
 	}
 	return nil
+}
+
+// DeleteBatch removes multiple objects concurrently
+func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	const maxConcurrency = 10
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxConcurrency)
+
+	for _, key := range keys {
+		key := key
+		g.Go(func() error {
+			if err := c.client.Bucket(c.bucket).Object(key).Delete(ctx); err != nil {
+				return fmt.Errorf("failed to delete %s: %w", key, err)
+			}
+			return nil
+		})
+	}
+
+	return g.Wait()
 }
 
 // List returns all objects with the given prefix
