@@ -4,7 +4,7 @@
 
 <br>
 
-*Encrypted with [age](https://github.com/FiloSottile/age) • Stored on Cloudflare R2*
+*Encrypted with [age](https://github.com/FiloSottile/age) • R2 / S3 / GCS supported*
 
 [![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev)
@@ -19,10 +19,11 @@
 ## Features
 
 - **Cross-device sync**: Continue Claude Code conversations on any laptop
+- **Multi-provider storage**: Cloudflare R2, AWS S3, or Google Cloud Storage
 - **End-to-end encryption**: All files encrypted with age before upload
 - **Passphrase-based keys**: Same passphrase = same key on any device (no file copying)
+- **Interactive wizard**: Arrow-key driven setup with validation
 - **Self-updating**: `claude-sync update` to get the latest version
-- **Minimal cost**: Uses Cloudflare R2 free tier (10GB included)
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
 
 ## Quick Start
@@ -46,7 +47,7 @@ claude-sync push
 # Install
 go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 
-# Set up with SAME R2 credentials and SAME passphrase
+# Set up with SAME storage credentials and SAME passphrase
 claude-sync init
 
 # Pull sessions
@@ -57,33 +58,63 @@ claude-sync pull
 
 ## Setup Guide
 
-### Step 1: Create R2 Bucket
+### Step 1: Choose a Storage Provider
+
+| Provider | Free Tier | Best For |
+|----------|-----------|----------|
+| **Cloudflare R2** | 10GB storage | Personal use (recommended) |
+| **AWS S3** | 5GB (12 months) | AWS users |
+| **Google Cloud Storage** | 5GB | GCP users |
+
+### Step 2: Create a Bucket
+
+<details>
+<summary><b>Cloudflare R2</b> (recommended)</summary>
 
 1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → R2 Object Storage
-2. Click "Create bucket" → name it anything (e.g., `claude-sync`)
+2. Click "Create bucket" → name it `claude-sync`
 3. Go to "Manage R2 API Tokens" → "Create API Token"
 4. Select **Object Read & Write** permission → Create
 
-You'll need:
-- **Account ID** (in the dashboard URL: `dash.cloudflare.com/<ACCOUNT_ID>/r2`)
-- **Access Key ID** (from the API token you just created)
-- **Secret Access Key** (shown once when creating token)
+You'll need: Account ID, Access Key ID, Secret Access Key
+</details>
 
-### Step 2: Run Init
+<details>
+<summary><b>AWS S3</b></summary>
+
+1. Go to [S3 Console](https://s3.console.aws.amazon.com/s3/bucket/create) → Create bucket
+2. Go to [IAM Security Credentials](https://console.aws.amazon.com/iam/home#/security_credentials)
+3. Create Access Keys
+
+You'll need: Access Key ID, Secret Access Key, Region
+</details>
+
+<details>
+<summary><b>Google Cloud Storage</b></summary>
+
+1. Go to [Cloud Storage](https://console.cloud.google.com/storage/create-bucket) → Create bucket
+2. Go to [Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) → Create service account
+3. Grant "Storage Object Admin" role → Create JSON key
+
+You'll need: Project ID, Service Account JSON file (or use `gcloud auth application-default login`)
+</details>
+
+### Step 3: Run Init
 
 ```bash
 claude-sync init
 ```
 
-The interactive setup will:
+The interactive wizard will guide you through:
 
-1. **Ask for R2 credentials** (Account ID, Access Key, Secret, Bucket name)
-2. **Ask for encryption method**:
-   - **[1] Passphrase** (recommended) - same passphrase on all devices = same key
-   - **[2] Random key** - must copy `~/.claude-sync/age-key.txt` to other devices
-3. **Test the connection** to verify everything works
+1. **Select storage provider** (R2, S3, or GCS)
+2. **Enter credentials** (provider-specific)
+3. **Choose encryption method**:
+   - **Passphrase** (recommended) - same passphrase on all devices = same key
+   - **Random key** - must copy `~/.claude-sync/age-key.txt` to other devices
+4. **Test the connection** to verify everything works
 
-### Step 3: Push and Pull
+### Step 4: Push and Pull
 
 ```bash
 # Upload local changes
@@ -109,9 +140,9 @@ claude-sync pull
 ## Commands
 
 ```bash
-claude-sync init        # Set up configuration
-claude-sync push        # Upload local changes to R2
-claude-sync pull        # Download remote changes from R2
+claude-sync init        # Set up configuration (interactive wizard)
+claude-sync push        # Upload local changes to cloud storage
+claude-sync pull        # Download remote changes from cloud storage
 claude-sync status      # Show pending local changes
 claude-sync diff        # Show differences between local and remote
 claude-sync conflicts   # List and resolve conflicts
@@ -170,11 +201,11 @@ Interactive options:
 
 The passphrase is **never stored**. If you forget it:
 
-1. Your encrypted R2 files cannot be recovered
+1. Your encrypted files cannot be recovered
 2. Reset and start fresh:
 
 ```bash
-claude-sync reset --remote   # Delete R2 files and local config
+claude-sync reset --remote   # Delete remote files and local config
 claude-sync init             # Set up again with new passphrase
 claude-sync push             # Re-upload from this device
 ```
@@ -184,17 +215,18 @@ claude-sync push             # Re-upload from this device
 - Files encrypted with [age](https://github.com/FiloSottile/age) before upload
 - Passphrase-derived keys use Argon2 (memory-hard KDF)
 - Passphrase is never stored - only the derived key at `~/.claude-sync/age-key.txt`
-- R2 bucket is private (API key auth)
+- Cloud storage is private (API key/IAM auth)
 - Config files stored with 0600 permissions
 
 ## Cost
 
-Cloudflare R2 free tier:
-- 10 GB storage
-- 1M Class A ops/month
-- 10M Class B ops/month
+Claude sessions typically use < 50MB. Syncing is effectively **free** on any provider:
 
-Claude sessions typically use < 50MB. Syncing is effectively **free**.
+| Provider | Free Tier |
+|----------|-----------|
+| **Cloudflare R2** | 10GB storage, 1M writes, 10M reads/month |
+| **AWS S3** | 5GB for 12 months (then ~$0.023/GB) |
+| **Google Cloud Storage** | 5GB, 5K writes, 50K reads/month |
 
 ## Installation Options
 
