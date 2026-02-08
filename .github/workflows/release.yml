@@ -35,9 +35,6 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-      - name: Build binaries
-        run: make build-all
-
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

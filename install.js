@@ -3,9 +3,7 @@
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
 
-const VERSION = require("./package.json").version;
 const REPO = "tawanorg/claude-sync";
 
 function getPlatform() {
@@ -41,9 +39,41 @@ function getBinaryName() {
   return `claude-sync-${platform}-${arch}${ext}`;
 }
 
-function getDownloadUrl() {
+function getLatestVersion() {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: "api.github.com",
+      path: `/repos/${REPO}/releases/latest`,
+      headers: {
+        "User-Agent": "claude-sync-installer",
+      },
+    };
+
+    https
+      .get(options, (response) => {
+        let data = "";
+        response.on("data", (chunk) => (data += chunk));
+        response.on("end", () => {
+          try {
+            const release = JSON.parse(data);
+            if (release.tag_name) {
+              // Remove 'v' prefix if present
+              resolve(release.tag_name.replace(/^v/, ""));
+            } else {
+              reject(new Error("No release found"));
+            }
+          } catch (e) {
+            reject(e);
+          }
+        });
+      })
+      .on("error", reject);
+  });
+}
+
+function getDownloadUrl(version) {
   const binaryName = getBinaryName();
-  return `https://github.com/${REPO}/releases/download/v${VERSION}/${binaryName}`;
+  return `https://github.com/${REPO}/releases/download/v${version}/${binaryName}`;
 }
 
 function download(url, dest) {
@@ -91,11 +121,14 @@ async function install() {
     fs.mkdirSync(binDir, { recursive: true });
   }
 
-  const url = getDownloadUrl();
-  console.log(`Downloading claude-sync v${VERSION}...`);
-  console.log(`  Platform: ${getPlatform()}-${getArch()}`);
-
   try {
+    console.log("Fetching latest version...");
+    const version = await getLatestVersion();
+    const url = getDownloadUrl(version);
+
+    console.log(`Downloading claude-sync v${version}...`);
+    console.log(`  Platform: ${getPlatform()}-${getArch()}`);
+
     await download(url, binaryPath);
 
     // Make executable on Unix
@@ -104,11 +137,11 @@ async function install() {
     }
 
     console.log(`  Installed to: ${binaryPath}`);
-    console.log(`\n✓ claude-sync installed successfully!`);
+    console.log(`\n✓ claude-sync v${version} installed successfully!`);
   } catch (err) {
     console.error(`\n✗ Failed to install claude-sync: ${err.message}`);
     console.error(`\nYou can manually download from:`);
-    console.error(`  ${url}`);
+    console.error(`  https://github.com/${REPO}/releases/latest`);
     process.exit(1);
   }
 }
