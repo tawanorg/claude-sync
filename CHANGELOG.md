@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/tawanorg/claude-sync/compare/v1.0.0...v1.1.0) (2026-02-08)
+
+
+### Features
+
+* add batch delete for faster remote clearing ([ce32f4e](https://github.com/tawanorg/claude-sync/commit/ce32f4e37b1e6d009c39af3c5a1b7849f3512a33))
+
 # [1.0.0](https://github.com/tawanorg/claude-sync/compare/v0.6.1...v1.0.0) (2026-02-08)
 
 
