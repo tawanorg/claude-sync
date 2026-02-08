@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/tawanorg/claude-sync/compare/v0.2.1...v0.3.0) (2026-02-08)
+
+
+### Features
+
+* add update command for self-updating CLI ([4c91357](https://github.com/tawanorg/claude-sync/commit/4c9135767dcafdf4b9d78b86e0dd3b84078b22bf))
+
 ## [0.2.1](https://github.com/tawanorg/claude-sync/compare/v0.2.0...v0.2.1) (2026-02-08)
 
 
