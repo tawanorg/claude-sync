@@ -7,11 +7,79 @@ Sync your Claude Code sessions across devices using Cloudflare R2 with end-to-en
 - **Cross-device sync**: Continue Claude Code conversations on any laptop
 - **End-to-end encryption**: All files encrypted with age before upload
 - **Passphrase-based keys**: Same passphrase = same key on any device (no file copying)
+- **Self-updating**: `claude-sync update` to get the latest version
 - **Minimal cost**: Uses Cloudflare R2 free tier (10GB included)
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
-- **Conflict resolution**: Interactive tool to review and resolve sync conflicts
 
-## What gets synced
+## Quick Start
+
+### First Device
+
+```bash
+# Install
+go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+
+# Set up (interactive)
+claude-sync init
+
+# Push your sessions
+claude-sync push
+```
+
+### Second Device
+
+```bash
+# Install
+go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
+
+# Set up with SAME R2 credentials and SAME passphrase
+claude-sync init
+
+# Pull sessions
+claude-sync pull
+```
+
+**That's it!** Same passphrase = same encryption key. No file copying needed.
+
+## Setup Guide
+
+### Step 1: Create R2 Bucket
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → R2 Object Storage
+2. Click "Create bucket" → name it anything (e.g., `claude-sync`)
+3. Go to "Manage R2 API Tokens" → "Create API Token"
+4. Select **Object Read & Write** permission → Create
+
+You'll need:
+- **Account ID** (in the dashboard URL: `dash.cloudflare.com/<ACCOUNT_ID>/r2`)
+- **Access Key ID** (from the API token you just created)
+- **Secret Access Key** (shown once when creating token)
+
+### Step 2: Run Init
+
+```bash
+claude-sync init
+```
+
+The interactive setup will:
+
+1. **Ask for R2 credentials** (Account ID, Access Key, Secret, Bucket name)
+2. **Ask for encryption method**:
+   - **[1] Passphrase** (recommended) - same passphrase on all devices = same key
+   - **[2] Random key** - must copy `~/.claude-sync/age-key.txt` to other devices
+3. **Test the connection** to verify everything works
+
+### Step 3: Push and Pull
+
+```bash
+# Upload local changes
+claude-sync push
+
+# Download remote changes
+claude-sync pull
+```
+
+## What Gets Synced
 
 | Path | Content |
 |------|---------|
@@ -24,244 +92,141 @@ Sync your Claude Code sessions across devices using Cloudflare R2 with end-to-en
 | `~/.claude/settings.json` | Settings |
 | `~/.claude/CLAUDE.md` | Global instructions |
 
-## Installation
+## Commands
 
-### From source
+```bash
+claude-sync init        # Set up configuration
+claude-sync push        # Upload local changes to R2
+claude-sync pull        # Download remote changes from R2
+claude-sync status      # Show pending local changes
+claude-sync diff        # Show differences between local and remote
+claude-sync conflicts   # List and resolve conflicts
+claude-sync reset       # Reset configuration (forgot passphrase)
+claude-sync update      # Update to latest version
+claude-sync --help      # Show all commands
+```
+
+### Quiet Mode
+
+```bash
+claude-sync push -q     # No output (for scripts)
+claude-sync pull -q
+```
+
+### Check for Updates
+
+```bash
+claude-sync update --check   # Check without installing
+claude-sync update           # Download and install latest version
+```
+
+## Shell Integration
+
+Add to `~/.zshrc` or `~/.bashrc`:
+
+```bash
+# Auto-pull on shell start
+if command -v claude-sync &> /dev/null; then
+  claude-sync pull -q &
+fi
+
+# Auto-push on shell exit
+trap 'claude-sync push -q' EXIT
+```
+
+## Conflict Resolution
+
+When both local and remote files change, the remote version is saved as `.conflict`:
+
+```bash
+claude-sync conflicts            # Interactive resolution
+claude-sync conflicts --list     # Just list conflicts
+claude-sync conflicts --keep local   # Keep all local versions
+claude-sync conflicts --keep remote  # Keep all remote versions
+```
+
+Interactive options:
+- **[l]** Keep local (delete conflict file)
+- **[r]** Keep remote (replace local)
+- **[d]** Show diff
+- **[s]** Skip
+- **[q]** Quit
+
+## Forgot Passphrase?
+
+The passphrase is **never stored**. If you forget it:
+
+1. Your encrypted R2 files cannot be recovered
+2. Reset and start fresh:
+
+```bash
+claude-sync reset --remote   # Delete R2 files and local config
+claude-sync init             # Set up again with new passphrase
+claude-sync push             # Re-upload from this device
+```
+
+## Security
+
+- Files encrypted with [age](https://github.com/FiloSottile/age) before upload
+- Passphrase-derived keys use Argon2 (memory-hard KDF)
+- Passphrase is never stored - only the derived key at `~/.claude-sync/age-key.txt`
+- R2 bucket is private (API key auth)
+- Config files stored with 0600 permissions
+
+## Cost
+
+Cloudflare R2 free tier:
+- 10 GB storage
+- 1M Class A ops/month
+- 10M Class B ops/month
+
+Claude sessions typically use < 50MB. Syncing is effectively **free**.
+
+## Installation Options
+
+### From Source (recommended)
 
 ```bash
 go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
 ```
 
-### Build manually
+### Build Manually
 
 ```bash
 git clone https://github.com/tawanorg/claude-sync
 cd claude-sync
 make build
-# Binary is at ./bin/claude-sync
+./bin/claude-sync --version
 ```
 
-## Setup
+### Download Binary
 
-### 1. Create Cloudflare R2 bucket
-
-1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. Navigate to R2 Object Storage
-3. Create a bucket named `claude-sync`
-4. Go to "Manage R2 API Tokens" and create a token with read/write access
-
-### 2. Initialize claude-sync
+Download from [GitHub Releases](https://github.com/tawanorg/claude-sync/releases):
 
 ```bash
-claude-sync init
-```
+# macOS ARM (M1/M2/M3)
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-darwin-arm64 -o claude-sync
+chmod +x claude-sync
+sudo mv claude-sync /usr/local/bin/
 
-You'll be prompted for:
-- Cloudflare Account ID (found in R2 dashboard URL)
-- R2 Access Key ID
-- R2 Secret Access Key
-- Bucket name (default: `claude-sync`)
+# macOS Intel
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-darwin-amd64 -o claude-sync
 
-This creates:
-- `~/.claude-sync/config.yaml` - Your R2 credentials
-- `~/.claude-sync/age-key.txt` - Encryption key (back this up!)
-- `~/.claude-sync/state.json` - Sync state tracking
+# Linux AMD64
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-linux-amd64 -o claude-sync
 
-### 3. Push your sessions
-
-```bash
-claude-sync push
-```
-
-### 4. Set up second device
-
-On your other laptop:
-
-```bash
-# Install
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
-
-# Initialize with same R2 credentials and passphrase
-claude-sync init --passphrase
-
-# Pull sessions
-claude-sync pull
-```
-
-**That's it!** If you used passphrase mode on your first device, just enter the same passphrase. The encryption key is derived deterministically - no file copying needed.
-
-<details>
-<summary>Alternative: Using random key (more secure)</summary>
-
-If you chose random key generation instead of passphrase:
-
-```bash
-# Install
-go install github.com/tawanorg/claude-sync/cmd/claude-sync@latest
-
-# Initialize with same R2 credentials
-claude-sync init --skip-guide
-
-# Copy your encryption key from first device
-scp first-laptop:~/.claude-sync/age-key.txt ~/.claude-sync/
-
-# Pull sessions
-claude-sync pull
-```
-
-</details>
-
-## Usage
-
-```bash
-# Upload local changes to R2
-claude-sync push
-
-# Download remote changes from R2
-claude-sync pull
-
-# Show pending local changes
-claude-sync status
-
-# Show differences between local and remote
-claude-sync diff
-
-# List and resolve conflicts
-claude-sync conflicts
-
-# Quiet mode (for scripts)
-claude-sync push -q
-claude-sync pull -q
-```
-
-## Shell integration
-
-Add to your `~/.zshrc` or `~/.bashrc`:
-
-```bash
-# Auto-pull Claude sessions on shell start
-if command -v claude-sync &> /dev/null; then
-  claude-sync pull --quiet &
-fi
-
-# Sync on shell exit
-trap 'claude-sync push --quiet' EXIT
-```
-
-## Conflict resolution
-
-When both local and remote files have changed, the remote version is saved as a `.conflict` file.
-
-```bash
-# List all conflicts
-claude-sync conflicts --list
-
-# Interactive resolution (review each conflict)
-claude-sync conflicts
-
-# Batch resolve - keep all local versions
-claude-sync conflicts --keep local
-
-# Batch resolve - keep all remote versions
-claude-sync conflicts --keep remote
-```
-
-In interactive mode, you can:
-- **[l]** Keep local version (delete conflict file)
-- **[r]** Keep remote version (replace local with conflict)
-- **[d]** Show diff between versions
-- **[s]** Skip (decide later)
-- **[q]** Quit
-
-## Encryption & Passphrase
-
-### How it works
-
-When you run `claude-sync init`, you choose between:
-
-| Mode | How it works | Pros | Cons |
-|------|-------------|------|------|
-| **Passphrase** | Key derived from passphrase using Argon2 | Same passphrase = same key on any device | Must remember passphrase |
-| **Random key** | Generates random age key | Most secure | Must copy key file to other devices |
-
-The derived/generated key is stored at `~/.claude-sync/age-key.txt`.
-
-### Forgot your passphrase?
-
-**The passphrase is never stored anywhere.** If you forget it:
-
-1. Your encrypted files on R2 **cannot be recovered**
-2. You must reset and start fresh:
-
-```bash
-# Reset everything (deletes R2 files too)
-claude-sync reset --remote
-
-# Set up again with new passphrase
-claude-sync init --passphrase
-```
-
-### Reset command
-
-Use `reset` when you need to start fresh:
-
-```bash
-# Clear local config only
-claude-sync reset
-
-# Also delete all files from R2
-claude-sync reset --remote
-
-# Also clear local sync state
-claude-sync reset --local
-
-# Full reset (nuclear option)
-claude-sync reset --remote --local
-
-# Skip confirmation
-claude-sync reset --remote --force
-```
-
-## Security
-
-- All files are encrypted with [age](https://github.com/FiloSottile/age) before upload
-- Encryption key never leaves your devices
-- Passphrase is **never stored** - only the derived key
-- R2 bucket is private (API key authentication)
-- Credentials stored with 0600 permissions
-
-## Cost
-
-Cloudflare R2 free tier includes:
-- 10 GB storage
-- 1 million Class A operations/month
-- 10 million Class B operations/month
-
-Claude sessions typically use < 50MB, so syncing is effectively **free**.
-
-## Architecture
-
-```
-┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│   Laptop A      │         │   Cloudflare R2 │         │   Laptop B      │
-│                 │         │                 │         │                 │
-│  ~/.claude/     │◄───────►│  claude-sync    │◄───────►│  ~/.claude/     │
-│                 │  push   │  bucket         │  pull   │                 │
-│  claude-sync    │  pull   │  (encrypted)    │  push   │  claude-sync    │
-└─────────────────┘         └─────────────────┘         └─────────────────┘
+# Linux ARM64
+curl -L https://github.com/tawanorg/claude-sync/releases/latest/download/claude-sync-linux-arm64 -o claude-sync
 ```
 
 ## Development
 
 ```bash
-# Run tests
-make test
-
-# Format code
-make fmt
-
-# Build for all platforms
-make build-all
+make test          # Run tests
+make fmt           # Format code
+make check         # Run all pre-commit checks
+make build-all     # Build for all platforms
+make setup-hooks   # Enable git pre-commit hooks
 ```
 
 ## License
