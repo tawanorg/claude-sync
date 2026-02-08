@@ -3,10 +3,14 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -52,6 +56,7 @@ func main() {
 		diffCmd(),
 		conflictsCmd(),
 		resetCmd(),
+		updateCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -1014,4 +1019,212 @@ Examples:
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
 
 	return cmd
+}
+
+// GitHubRelease represents a GitHub release from the API
+type GitHubRelease struct {
+	TagName string `json:"tag_name"`
+	Name    string `json:"name"`
+	Assets  []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+func updateCmd() *cobra.Command {
+	var checkOnly bool
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update claude-sync to the latest version",
+		Long: `Check for updates and automatically download the latest version.
+
+Examples:
+  claude-sync update          # Update to latest version
+  claude-sync update --check  # Only check for updates, don't install`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Printf("%s⋯%s Checking for updates...\n", colorDim, colorReset)
+
+			// Get latest release from GitHub
+			release, err := getLatestRelease()
+			if err != nil {
+				return fmt.Errorf("failed to check for updates: %w", err)
+			}
+
+			latestVersion := strings.TrimPrefix(release.TagName, "v")
+			currentVersion := strings.TrimPrefix(version, "v")
+
+			if latestVersion == currentVersion {
+				fmt.Printf("%s✓%s Already up to date (v%s)\n", colorGreen, colorReset, currentVersion)
+				return nil
+			}
+
+			// Compare versions (simple string comparison works for semver)
+			if compareVersions(currentVersion, latestVersion) >= 0 {
+				fmt.Printf("%s✓%s Already up to date (v%s)\n", colorGreen, colorReset, currentVersion)
+				return nil
+			}
+
+			fmt.Printf("%s↑%s New version available: %sv%s%s → %sv%s%s\n",
+				colorCyan, colorReset,
+				colorDim, currentVersion, colorReset,
+				colorGreen, latestVersion, colorReset)
+
+			if checkOnly {
+				fmt.Printf("\n%sRun 'claude-sync update' to install%s\n", colorDim, colorReset)
+				return nil
+			}
+
+			// Find the right asset for this OS/arch
+			assetName := getBinaryName(latestVersion)
+			var downloadURL string
+			for _, asset := range release.Assets {
+				if asset.Name == assetName {
+					downloadURL = asset.BrowserDownloadURL
+					break
+				}
+			}
+
+			if downloadURL == "" {
+				return fmt.Errorf("no binary available for %s/%s", runtime.GOOS, runtime.GOARCH)
+			}
+
+			fmt.Printf("%s⋯%s Downloading %s...\n", colorDim, colorReset, assetName)
+
+			// Download the new binary
+			newBinary, err := downloadBinary(downloadURL)
+			if err != nil {
+				return fmt.Errorf("failed to download update: %w", err)
+			}
+
+			// Get current executable path
+			execPath, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("failed to get executable path: %w", err)
+			}
+			execPath, err = filepath.EvalSymlinks(execPath)
+			if err != nil {
+				return fmt.Errorf("failed to resolve executable path: %w", err)
+			}
+
+			// Replace the current binary
+			fmt.Printf("%s⋯%s Installing update...\n", colorDim, colorReset)
+			if err := replaceBinary(execPath, newBinary); err != nil {
+				return fmt.Errorf("failed to install update: %w", err)
+			}
+
+			fmt.Printf("%s✓%s Updated to v%s\n", colorGreen, colorReset, latestVersion)
+			fmt.Printf("\n%sRestart claude-sync to use the new version%s\n", colorDim, colorReset)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check for updates, don't install")
+
+	return cmd
+}
+
+func getLatestRelease() (*GitHubRelease, error) {
+	url := "https://api.github.com/repos/tawanorg/claude-sync/releases/latest"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "claude-sync/"+version)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, err
+	}
+
+	return &release, nil
+}
+
+func getBinaryName(version string) string {
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+
+	return fmt.Sprintf("claude-sync-%s-%s", goos, goarch)
+}
+
+func downloadBinary(url string) ([]byte, error) {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+func replaceBinary(execPath string, newBinary []byte) error {
+	// Write to a temporary file first
+	tmpPath := execPath + ".new"
+	if err := os.WriteFile(tmpPath, newBinary, 0755); err != nil {
+		return fmt.Errorf("failed to write new binary: %w", err)
+	}
+
+	// Backup current binary
+	backupPath := execPath + ".old"
+	if err := os.Rename(execPath, backupPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to backup current binary: %w", err)
+	}
+
+	// Move new binary into place
+	if err := os.Rename(tmpPath, execPath); err != nil {
+		// Try to restore backup
+		os.Rename(backupPath, execPath)
+		return fmt.Errorf("failed to install new binary: %w", err)
+	}
+
+	// Remove backup
+	os.Remove(backupPath)
+
+	return nil
+}
+
+func compareVersions(v1, v2 string) int {
+	// Simple semver comparison
+	// Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	for i := 0; i < 3; i++ {
+		var p1, p2 int
+		if i < len(parts1) {
+			fmt.Sscanf(parts1[i], "%d", &p1)
+		}
+		if i < len(parts2) {
+			fmt.Sscanf(parts2[i], "%d", &p2)
+		}
+
+		if p1 < p2 {
+			return -1
+		}
+		if p1 > p2 {
+			return 1
+		}
+	}
+
+	return 0
 }
