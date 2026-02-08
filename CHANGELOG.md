@@ -1,3 +1,10 @@
+## [0.4.1](https://github.com/tawanorg/claude-sync/compare/v0.4.0...v0.4.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* use scoped npm package name @tawandotorg/claude-sync ([a0dde3d](https://github.com/tawanorg/claude-sync/commit/a0dde3d8d26a115c794c8b153f1952ad452c3a50))
+
 # [0.4.0](https://github.com/tawanorg/claude-sync/compare/v0.3.2...v0.4.0) (2026-02-08)
 
 
