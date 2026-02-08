@@ -94,6 +94,10 @@ func printBanner() {
 	fmt.Println()
 	fmt.Printf("  %sv%s%s\n", colorDim, version, colorReset)
 	fmt.Println()
+	fmt.Printf("  %sBuilt with ♥ by @tawanorg%s\n", colorDim, colorReset)
+	fmt.Printf("  %sGitHub: https://github.com/tawanorg/claude-sync%s\n", colorDim, colorReset)
+	fmt.Printf("  %sContributions welcome!%s\n", colorDim, colorReset)
+	fmt.Println()
 }
 
 func printStep(step int, total int, text string) {
