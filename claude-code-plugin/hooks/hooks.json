@@ -1,21 +1,24 @@
 {
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "command": "bash {{plugin_dir}}/scripts/check-config.sh",
-      "additionalContext": true,
-      "blocking": false
-    },
-    {
-      "event": "SessionEnd",
-      "command": "bash {{plugin_dir}}/scripts/auto-push.sh",
-      "blocking": false
-    },
-    {
-      "event": "Idle",
-      "command": "bash {{plugin_dir}}/scripts/auto-push.sh",
-      "idleTimeout": 300000,
-      "blocking": false
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "bash {{plugin_dir}}/scripts/check-config.sh",
+        "additionalContext": true,
+        "blocking": false
+      }
+    ],
+    "SessionEnd": [
+      {
+        "command": "bash {{plugin_dir}}/scripts/auto-push.sh",
+        "blocking": false
+      }
+    ],
+    "Idle": [
+      {
+        "command": "bash {{plugin_dir}}/scripts/auto-push.sh",
+        "idleTimeout": 300000,
+        "blocking": false
+      }
+    ]
+  }
 }
