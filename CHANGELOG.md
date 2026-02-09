@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/tawanorg/claude-sync/compare/v1.2.1...v1.2.2) (2026-02-09)
+
+
+### Bug Fixes
+
+* use record format for hooks instead of array ([8433bda](https://github.com/tawanorg/claude-sync/commit/8433bdaca3eeb40b5827a023a3d5e4636c4e9925))
+
 ## [1.2.1](https://github.com/tawanorg/claude-sync/compare/v1.2.0...v1.2.1) (2026-02-09)
 
 
