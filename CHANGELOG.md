@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/tawanorg/claude-sync/compare/v1.2.0...v1.2.1) (2026-02-09)
+
+
+### Bug Fixes
+
+* use 'source' instead of 'path' in marketplace.json ([e7253aa](https://github.com/tawanorg/claude-sync/commit/e7253aa5d989fe2e25f4b24a959ba5cdceb0309c))
+
 # [1.2.0](https://github.com/tawanorg/claude-sync/compare/v1.1.0...v1.2.0) (2026-02-08)
 
 
