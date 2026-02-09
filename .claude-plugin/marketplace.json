@@ -7,7 +7,7 @@
     {
       "name": "claude-sync",
       "description": "Sync Claude Code sessions across devices with encrypted cloud storage",
-      "path": "./claude-code-plugin"
+      "source": "./claude-code-plugin"
     }
   ]
 }
