@@ -30,6 +30,9 @@ type Config struct {
 	// Common fields
 	EncryptionKey string `yaml:"encryption_key_path"`
 
+	// Exclude patterns (glob-style) for paths to skip during sync
+	Exclude []string `yaml:"exclude,omitempty"`
+
 	// ClaudeDirOverride allows overriding the default ~/.claude path (for testing)
 	ClaudeDirOverride string `yaml:"-"`
 
@@ -153,4 +156,28 @@ func (c *Config) GetStorageConfig() *storage.StorageConfig {
 // IsLegacyConfig returns true if using the legacy R2-only config format
 func (c *Config) IsLegacyConfig() bool {
 	return c.Storage == nil && c.AccountID != ""
+}
+
+// IsExcluded returns true if the given relative path matches any exclude pattern.
+// Patterns use filepath.Match syntax (e.g. "plugins/marketplace*", "*.tmp").
+// A pattern can also be a plain prefix match (e.g. "plugins/marketplace").
+func (c *Config) IsExcluded(relPath string) bool {
+	for _, pattern := range c.Exclude {
+		// Try glob match
+		matched, err := filepath.Match(pattern, relPath)
+		if err == nil && matched {
+			return true
+		}
+		// Also match if the path starts with the pattern as a directory prefix
+		// This lets "plugins/marketplace" exclude everything under that dir
+		if len(relPath) > len(pattern) && relPath[:len(pattern)] == pattern &&
+			(relPath[len(pattern)] == '/' || relPath[len(pattern)] == '\\') {
+			return true
+		}
+		// Exact match
+		if relPath == pattern {
+			return true
+		}
+	}
+	return false
 }
