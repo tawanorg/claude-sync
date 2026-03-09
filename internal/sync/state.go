@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tawanorg/claude-sync/internal/config"
@@ -143,8 +144,50 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func GetLocalFiles(claudeDir string, syncPaths []string) (map[string]os.FileInfo, error) {
+// shouldExclude checks if a relative path matches any of the exclude patterns.
+// Patterns support filepath.Match glob syntax. Additionally, a pattern ending
+// with "/**" matches the directory and everything under it.
+func shouldExclude(relPath string, excludePatterns []string) bool {
+	for _, pattern := range excludePatterns {
+		// Handle "dir/**" pattern: match anything under that directory
+		if strings.HasSuffix(pattern, "/**") {
+			dirPrefix := strings.TrimSuffix(pattern, "/**")
+			if relPath == dirPrefix || strings.HasPrefix(relPath, dirPrefix+"/") {
+				return true
+			}
+			continue
+		}
+
+		// Try matching the full relative path
+		if matched, _ := filepath.Match(pattern, relPath); matched {
+			return true
+		}
+
+		// Try matching just the filename (for patterns like "*.tmp")
+		if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
+			return true
+		}
+
+		// Try matching each path component for directory patterns
+		parts := strings.Split(relPath, "/")
+		for i := range parts {
+			partial := strings.Join(parts[:i+1], "/")
+			if matched, _ := filepath.Match(pattern, partial); matched {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func GetLocalFiles(claudeDir string, syncPaths []string, excludePatterns ...[]string) (map[string]os.FileInfo, error) {
 	files := make(map[string]os.FileInfo)
+
+	// Flatten optional exclude patterns
+	var exclude []string
+	for _, patterns := range excludePatterns {
+		exclude = append(exclude, patterns...)
+	}
 
 	for _, syncPath := range syncPaths {
 		fullPath := filepath.Join(claudeDir, syncPath)
@@ -162,15 +205,25 @@ func GetLocalFiles(claudeDir string, syncPaths []string) (map[string]os.FileInfo
 				if err != nil {
 					return err
 				}
+
+				relPath, _ := filepath.Rel(claudeDir, path)
+
+				// Skip excluded directories early to avoid walking their contents
 				if fi.IsDir() {
+					if len(exclude) > 0 && shouldExclude(relPath, exclude) {
+						return filepath.SkipDir
+					}
 					return nil
 				}
 				// Skip symlinks
 				if fi.Mode()&os.ModeSymlink != 0 {
 					return nil
 				}
+				// Skip excluded files
+				if len(exclude) > 0 && shouldExclude(relPath, exclude) {
+					return nil
+				}
 
-				relPath, _ := filepath.Rel(claudeDir, path)
 				files[relPath] = fi
 				return nil
 			})
@@ -180,6 +233,10 @@ func GetLocalFiles(claudeDir string, syncPaths []string) (map[string]os.FileInfo
 		} else {
 			// Skip symlinks
 			if info.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
+			// Skip excluded files
+			if len(exclude) > 0 && shouldExclude(syncPath, exclude) {
 				continue
 			}
 			files[syncPath] = info
@@ -197,10 +254,10 @@ type FileChange struct {
 	LocalTime time.Time
 }
 
-func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string) ([]FileChange, error) {
+func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string, excludePatterns ...[]string) ([]FileChange, error) {
 	var changes []FileChange
 
-	localFiles, err := GetLocalFiles(claudeDir, syncPaths)
+	localFiles, err := GetLocalFiles(claudeDir, syncPaths, excludePatterns...)
 	if err != nil {
 		return nil, err
 	}
