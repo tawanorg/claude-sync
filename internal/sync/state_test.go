@@ -288,6 +288,163 @@ func TestDetectChanges(t *testing.T) {
 	}
 }
 
+func TestShouldExclude(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		patterns []string
+		expected bool
+	}{
+		// Directory wildcard patterns
+		{"exclude dir with /**", "plugins/cache/foo/bar.js", []string{"plugins/cache/**"}, true},
+		{"exclude dir itself", "plugins/cache", []string{"plugins/cache/**"}, true},
+		{"exclude nested dir", "plugins/marketplaces/repo/file.txt", []string{"plugins/marketplaces/**"}, true},
+		{"non-matching dir", "plugins/installed.json", []string{"plugins/cache/**"}, false},
+
+		// Filename glob patterns
+		{"exclude by extension", "projects/foo/debug.tmp", []string{"*.tmp"}, true},
+		{"exclude dotfile", "projects/.DS_Store", []string{".DS_Store"}, true},
+		{"non-matching extension", "projects/foo/file.json", []string{"*.tmp"}, false},
+
+		// Exact path patterns
+		{"exact file match", "debug/log.txt", []string{"debug/log.txt"}, true},
+		{"exact dir pattern", "debug", []string{"debug/**"}, true},
+
+		// Multiple patterns
+		{"first pattern matches", "plugins/cache/mod.js", []string{"plugins/cache/**", "*.tmp"}, true},
+		{"second pattern matches", "foo.tmp", []string{"plugins/cache/**", "*.tmp"}, true},
+		{"no pattern matches", "settings.json", []string{"plugins/cache/**", "*.tmp"}, false},
+
+		// Empty patterns
+		{"empty patterns", "anything.txt", []string{}, false},
+		{"nil-like empty", "anything.txt", nil, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := shouldExclude(tt.path, tt.patterns)
+			if result != tt.expected {
+				t.Errorf("shouldExclude(%q, %v) = %v, want %v", tt.path, tt.patterns, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetLocalFilesWithExclude(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create directory structure mimicking ~/.claude
+	dirs := []string{
+		"plugins/cache/thedotmack/claude-mem",
+		"plugins/marketplaces/repo",
+		"projects/myproject",
+		"agents",
+		"debug",
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755); err != nil {
+			t.Fatalf("Failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	fileContents := map[string]string{
+		"CLAUDE.md":                                    "# Claude",
+		"settings.json":                                "{}",
+		"plugins/installed_plugins.json":                "{}",
+		"plugins/cache/thedotmack/claude-mem/index.js": "module.exports = {}",
+		"plugins/marketplaces/repo/package.json":        `{"name": "repo"}`,
+		"projects/myproject/memory.md":                  "# Memory",
+		"agents/seo.md":                                "# SEO Agent",
+		"debug/log.txt":                                "debug output",
+	}
+
+	for path, content := range fileContents {
+		if err := os.WriteFile(filepath.Join(tmpDir, path), []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create file %s: %v", path, err)
+		}
+	}
+
+	syncPaths := []string{"CLAUDE.md", "settings.json", "plugins", "projects", "agents", "debug"}
+
+	// Without exclude — all files found
+	allFiles, err := GetLocalFiles(tmpDir, syncPaths)
+	if err != nil {
+		t.Fatalf("GetLocalFiles failed: %v", err)
+	}
+	if len(allFiles) != len(fileContents) {
+		t.Errorf("Expected %d files without exclude, got %d", len(fileContents), len(allFiles))
+	}
+
+	// With exclude — plugin cache, marketplaces, and debug excluded
+	excludePatterns := []string{"plugins/cache/**", "plugins/marketplaces/**", "debug/**"}
+	filteredFiles, err := GetLocalFiles(tmpDir, syncPaths, excludePatterns)
+	if err != nil {
+		t.Fatalf("GetLocalFiles with exclude failed: %v", err)
+	}
+
+	// Should include: CLAUDE.md, settings.json, installed_plugins.json, memory.md, seo.md
+	expectedIncluded := []string{
+		"CLAUDE.md", "settings.json", "plugins/installed_plugins.json",
+		"projects/myproject/memory.md", "agents/seo.md",
+	}
+	for _, f := range expectedIncluded {
+		if _, ok := filteredFiles[f]; !ok {
+			t.Errorf("Expected file %q to be included after filtering", f)
+		}
+	}
+
+	// Should exclude: cache, marketplaces, debug
+	expectedExcluded := []string{
+		"plugins/cache/thedotmack/claude-mem/index.js",
+		"plugins/marketplaces/repo/package.json",
+		"debug/log.txt",
+	}
+	for _, f := range expectedExcluded {
+		if _, ok := filteredFiles[f]; ok {
+			t.Errorf("Expected file %q to be excluded after filtering, but it was included", f)
+		}
+	}
+
+	if len(filteredFiles) != len(expectedIncluded) {
+		t.Errorf("Expected %d files after exclude, got %d", len(expectedIncluded), len(filteredFiles))
+	}
+}
+
+func TestDetectChangesWithExclude(t *testing.T) {
+	tmpDir := t.TempDir()
+	state := NewState()
+
+	// Create files including some that should be excluded
+	os.MkdirAll(filepath.Join(tmpDir, "plugins/cache"), 0755)
+	files := map[string]string{
+		"settings.json":          "{}",
+		"plugins/cache/big.dat": "lots of data",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create file %s: %v", name, err)
+		}
+	}
+
+	// Detect changes with exclude
+	exclude := []string{"plugins/cache/**"}
+	changes, err := state.DetectChanges(tmpDir, []string{"settings.json", "plugins"}, exclude)
+	if err != nil {
+		t.Fatalf("DetectChanges with exclude failed: %v", err)
+	}
+
+	// Only settings.json should be detected
+	if len(changes) != 1 {
+		t.Errorf("Expected 1 change (settings.json only), got %d", len(changes))
+		for _, c := range changes {
+			t.Logf("  change: %s (%s)", c.Path, c.Action)
+		}
+	}
+	if len(changes) == 1 && changes[0].Path != "settings.json" {
+		t.Errorf("Expected change for settings.json, got %s", changes[0].Path)
+	}
+}
+
 func TestGetLocalFilesSkipsSymlinksInDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 

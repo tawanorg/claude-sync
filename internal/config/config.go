@@ -30,6 +30,10 @@ type Config struct {
 	// Common fields
 	EncryptionKey string `yaml:"encryption_key_path"`
 
+	// Exclude patterns for files/directories to skip during sync
+	// Supports glob patterns (e.g., "plugins/cache/**", "plugins/marketplaces/**")
+	Exclude []string `yaml:"exclude,omitempty"`
+
 	// ClaudeDirOverride allows overriding the default ~/.claude path (for testing)
 	ClaudeDirOverride string `yaml:"-"`
 

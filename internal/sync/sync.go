@@ -19,12 +19,13 @@ import (
 )
 
 type Syncer struct {
-	storage    storage.Storage
-	encryptor  *crypto.Encryptor
-	state      *SyncState
-	claudeDir  string
-	quiet      bool
-	onProgress ProgressFunc
+	storage         storage.Storage
+	encryptor       *crypto.Encryptor
+	state           *SyncState
+	claudeDir       string
+	quiet           bool
+	onProgress      ProgressFunc
+	excludePatterns []string
 }
 
 type SyncResult struct {
@@ -77,11 +78,12 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	}
 
 	return &Syncer{
-		storage:   store,
-		encryptor: enc,
-		state:     state,
-		claudeDir: claudeDir,
-		quiet:     quiet,
+		storage:         store,
+		encryptor:       enc,
+		state:           state,
+		claudeDir:       claudeDir,
+		quiet:           quiet,
+		excludePatterns: cfg.Exclude,
 	}, nil
 }
 
@@ -106,7 +108,7 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 
 	s.progress(ProgressEvent{Action: "scan", Path: "Detecting changes..."})
 
-	changes, err := s.state.DetectChanges(s.claudeDir, config.SyncPaths)
+	changes, err := s.state.DetectChanges(s.claudeDir, config.SyncPaths, s.excludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect changes: %w", err)
 	}
@@ -196,7 +198,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	}
 
 	// Get current local files
-	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths)
+	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths, s.excludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
@@ -280,7 +282,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 }
 
 func (s *Syncer) Status(ctx context.Context) ([]FileChange, error) {
-	return s.state.DetectChanges(s.claudeDir, config.SyncPaths)
+	return s.state.DetectChanges(s.claudeDir, config.SyncPaths, s.excludePatterns)
 }
 
 func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
@@ -420,7 +422,7 @@ func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
 	}
 
 	// Get current local files
-	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths)
+	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths, s.excludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
@@ -499,7 +501,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 	var entries []DiffEntry
 
 	// Get local files
-	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths)
+	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths, s.excludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
