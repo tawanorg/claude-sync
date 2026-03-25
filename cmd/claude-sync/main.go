@@ -64,6 +64,7 @@ func main() {
 		resetCmd(),
 		updateCmd(),
 		autoCmd(),
+		changelogCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -1682,7 +1683,11 @@ func getBinaryName(version string) string {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 
-	return fmt.Sprintf("claude-sync-%s-%s", goos, goarch)
+	name := fmt.Sprintf("claude-sync-%s-%s", goos, goarch)
+	if goos == "windows" {
+		name += ".exe"
+	}
+	return name
 }
 
 func downloadBinary(url string) ([]byte, error) {
@@ -2409,5 +2414,150 @@ func autoStatusCmd() *cobra.Command {
 			fmt.Println()
 			return nil
 		},
+	}
+}
+
+func changelogCmd() *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:   "changelog",
+		Short: "Show release history and changelog",
+		Long: `Display the release history of claude-sync with version notes.
+
+Examples:
+  claude-sync changelog          # Show recent releases
+  claude-sync changelog --limit 5 # Show last 5 releases`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Printf("%s⋯%s Fetching releases...\n\n", colorDim, colorReset)
+
+			releases, err := getAllReleases(limit)
+			if err != nil {
+				return fmt.Errorf("failed to fetch changelog: %w", err)
+			}
+
+			if len(releases) == 0 {
+				fmt.Printf("%sNo releases found.%s\n", colorDim, colorReset)
+				return nil
+			}
+
+			// Header
+			fmt.Printf("%s╭─────────────────────────────────────────────────────────────╮%s\n", colorCyan, colorReset)
+			fmt.Printf("%s│%s  %sCLAUDE-SYNC CHANGELOG%s                                      %s│%s\n", colorCyan, colorReset, colorBold, colorReset, colorCyan, colorReset)
+			fmt.Printf("%s╰─────────────────────────────────────────────────────────────╯%s\n\n", colorCyan, colorReset)
+
+			currentVersion := strings.TrimPrefix(version, "v")
+
+			for i, release := range releases {
+				tagVersion := strings.TrimPrefix(release.TagName, "v")
+				isCurrent := tagVersion == currentVersion
+
+				// Version header with current marker
+				if isCurrent {
+					fmt.Printf("%s▸ %s%s %s(current)%s\n", colorGreen, release.TagName, colorReset, colorGreen, colorReset)
+				} else {
+					fmt.Printf("%s▸ %s%s\n", colorCyan, release.TagName, colorReset)
+				}
+
+				// Release date
+				if release.PublishedAt != "" {
+					if t, err := time.Parse(time.RFC3339, release.PublishedAt); err == nil {
+						fmt.Printf("  %sReleased: %s%s\n", colorDim, t.Format("January 2, 2006"), colorReset)
+					}
+				}
+
+				// Release notes (body)
+				if release.Body != "" {
+					fmt.Println()
+					printReleaseBody(release.Body)
+				}
+
+				// Separator between releases
+				if i < len(releases)-1 {
+					fmt.Printf("\n%s───────────────────────────────────────────────────────────────%s\n\n", colorDim, colorReset)
+				}
+			}
+
+			fmt.Println()
+			fmt.Printf("%sView all releases: %shttps://github.com/tawanorg/claude-sync/releases%s\n", colorDim, colorCyan, colorReset)
+			fmt.Println()
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVarP(&limit, "limit", "n", 10, "Number of releases to show")
+
+	return cmd
+}
+
+// GitHubReleaseWithBody extends GitHubRelease with body and published date
+type GitHubReleaseWithBody struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	Body        string `json:"body"`
+	PublishedAt string `json:"published_at"`
+	Assets      []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+func getAllReleases(limit int) ([]GitHubReleaseWithBody, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/tawanorg/claude-sync/releases?per_page=%d", limit)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "claude-sync/"+version)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var releases []GitHubReleaseWithBody
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
+	}
+
+	return releases, nil
+}
+
+func printReleaseBody(body string) {
+	lines := strings.Split(body, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Format markdown-style headers
+		if strings.HasPrefix(line, "## ") {
+			fmt.Printf("  %s%s%s\n", colorBold, strings.TrimPrefix(line, "## "), colorReset)
+			continue
+		}
+		if strings.HasPrefix(line, "### ") {
+			fmt.Printf("  %s%s%s\n", colorBold, strings.TrimPrefix(line, "### "), colorReset)
+			continue
+		}
+
+		// Format bullet points
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			content := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+			fmt.Printf("  %s•%s %s\n", colorCyan, colorReset, content)
+			continue
+		}
+
+		// Regular text
+		fmt.Printf("  %s\n", line)
 	}
 }
