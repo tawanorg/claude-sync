@@ -63,6 +63,7 @@ func main() {
 		conflictsCmd(),
 		resetCmd(),
 		updateCmd(),
+		autoCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -2107,4 +2108,255 @@ func executePull(ctx context.Context, syncer *sync.Syncer) error {
 	}
 
 	return nil
+}
+
+// autoCmd sets up Claude Code hooks for automatic sync on session start/end.
+func autoCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auto",
+		Short: "Manage automatic sync via Claude Code hooks",
+		Long: `Configure Claude Code to automatically pull on session start and push on session end.
+
+Examples:
+  claude-sync auto enable    # Install hooks into ~/.claude/settings.json
+  claude-sync auto disable   # Remove hooks from ~/.claude/settings.json
+  claude-sync auto status    # Show current hook status`,
+	}
+
+	cmd.AddCommand(autoEnableCmd(), autoDisableCmd(), autoStatusCmd())
+	return cmd
+}
+
+const claudeSyncHookTag = "claude-sync-auto"
+
+type settingsJSON struct {
+	data map[string]interface{}
+	path string
+}
+
+func loadSettings() (*settingsJSON, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	s := &settingsJSON{path: settingsPath}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			s.data = make(map[string]interface{})
+			return s, nil
+		}
+		return nil, fmt.Errorf("failed to read settings: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &s.data); err != nil {
+		return nil, fmt.Errorf("failed to parse settings: %w", err)
+	}
+
+	return s, nil
+}
+
+func (s *settingsJSON) save() error {
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(s.data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize settings: %w", err)
+	}
+
+	if err := os.WriteFile(s.path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write settings: %w", err)
+	}
+
+	return nil
+}
+
+func (s *settingsJSON) getHooks() map[string]interface{} {
+	hooks, ok := s.data["hooks"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return hooks
+}
+
+func (s *settingsJSON) hasClaudeSyncHooks() bool {
+	hooks := s.getHooks()
+	if hooks == nil {
+		return false
+	}
+
+	for _, event := range []string{"SessionStart", "Stop"} {
+		entries, ok := hooks[event].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, entry := range entries {
+			entryMap, ok := entry.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if entryMap["matcher"] == claudeSyncHookTag {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func makeHookEntry(command string) map[string]interface{} {
+	return map[string]interface{}{
+		"matcher": claudeSyncHookTag,
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"type":    "command",
+				"command": command,
+			},
+		},
+	}
+}
+
+func (s *settingsJSON) addClaudeSyncHooks() {
+	if s.data["hooks"] == nil {
+		s.data["hooks"] = make(map[string]interface{})
+	}
+	hooks := s.data["hooks"].(map[string]interface{})
+
+	// Add SessionStart -> pull
+	startEntries, _ := hooks["SessionStart"].([]interface{})
+	hooks["SessionStart"] = append(startEntries, makeHookEntry("claude-sync pull"))
+
+	// Add Stop -> push
+	stopEntries, _ := hooks["Stop"].([]interface{})
+	hooks["Stop"] = append(stopEntries, makeHookEntry("claude-sync push"))
+}
+
+func (s *settingsJSON) removeClaudeSyncHooks() {
+	hooks := s.getHooks()
+	if hooks == nil {
+		return
+	}
+
+	for _, event := range []string{"SessionStart", "Stop"} {
+		entries, ok := hooks[event].([]interface{})
+		if !ok {
+			continue
+		}
+
+		var filtered []interface{}
+		for _, entry := range entries {
+			entryMap, ok := entry.(map[string]interface{})
+			if !ok {
+				filtered = append(filtered, entry)
+				continue
+			}
+			if entryMap["matcher"] != claudeSyncHookTag {
+				filtered = append(filtered, entry)
+			}
+		}
+
+		if len(filtered) == 0 {
+			delete(hooks, event)
+		} else {
+			hooks[event] = filtered
+		}
+	}
+
+	// Remove empty hooks object
+	if len(hooks) == 0 {
+		delete(s.data, "hooks")
+	}
+}
+
+func autoEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable",
+		Short: "Install auto-sync hooks into Claude Code",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			settings, err := loadSettings()
+			if err != nil {
+				return err
+			}
+
+			if settings.hasClaudeSyncHooks() {
+				fmt.Printf("  %s✓%s Auto-sync hooks are already enabled\n", colorGreen, colorReset)
+				return nil
+			}
+
+			settings.addClaudeSyncHooks()
+			if err := settings.save(); err != nil {
+				return err
+			}
+
+			fmt.Println()
+			fmt.Printf("  %s✓%s Auto-sync hooks installed\n", colorGreen, colorReset)
+			fmt.Println()
+			fmt.Printf("  %sSessionStart%s -> %sclaude-sync pull%s\n", colorBold, colorReset, colorCyan, colorReset)
+			fmt.Printf("  %sStop%s         -> %sclaude-sync push%s\n", colorBold, colorReset, colorCyan, colorReset)
+			fmt.Println()
+			fmt.Printf("  %sClaude Code will now sync automatically on session start and end.%s\n", colorDim, colorReset)
+			fmt.Println()
+			return nil
+		},
+	}
+}
+
+func autoDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Remove auto-sync hooks from Claude Code",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			settings, err := loadSettings()
+			if err != nil {
+				return err
+			}
+
+			if !settings.hasClaudeSyncHooks() {
+				fmt.Printf("  Auto-sync hooks are not enabled\n")
+				return nil
+			}
+
+			settings.removeClaudeSyncHooks()
+			if err := settings.save(); err != nil {
+				return err
+			}
+
+			fmt.Println()
+			fmt.Printf("  %s✓%s Auto-sync hooks removed\n", colorGreen, colorReset)
+			fmt.Println()
+			return nil
+		},
+	}
+}
+
+func autoStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show auto-sync hook status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			settings, err := loadSettings()
+			if err != nil {
+				return err
+			}
+
+			fmt.Println()
+			if settings.hasClaudeSyncHooks() {
+				fmt.Printf("  %s✓%s Auto-sync is %senabled%s\n", colorGreen, colorReset, colorGreen, colorReset)
+				fmt.Println()
+				fmt.Printf("  %sSessionStart%s -> pull latest from cloud before session\n", colorBold, colorReset)
+				fmt.Printf("  %sStop%s         -> push changes to cloud after session\n", colorBold, colorReset)
+			} else {
+				fmt.Printf("  %s•%s Auto-sync is %sdisabled%s\n", colorDim, colorReset, colorDim, colorReset)
+				fmt.Println()
+				fmt.Printf("  %sRun '%sclaude-sync auto enable%s%s' to set up automatic sync.%s\n", colorDim, colorCyan, colorReset, colorDim, colorReset)
+			}
+			fmt.Println()
+			return nil
+		},
+	}
 }
