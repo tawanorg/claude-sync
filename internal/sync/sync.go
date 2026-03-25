@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tawanorg/claude-sync/internal/config"
@@ -17,6 +19,8 @@ import (
 	_ "github.com/tawanorg/claude-sync/internal/storage/r2"
 	_ "github.com/tawanorg/claude-sync/internal/storage/s3"
 )
+
+const defaultWorkers = 10
 
 type Syncer struct {
 	storage    storage.Storage
@@ -122,44 +126,74 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 		return result, nil
 	}
 
-	total := len(changes)
-	for i, change := range changes {
+	// Separate uploads from deletes
+	var uploads, deletes []FileChange
+	for _, change := range changes {
 		switch change.Action {
 		case "add", "modify":
-			s.progress(ProgressEvent{
-				Action:  "upload",
-				Path:    change.Path,
-				Size:    change.LocalSize,
-				Current: i + 1,
-				Total:   total,
-			})
-
-			if err := s.uploadFile(ctx, change.Path); err != nil {
-				s.progress(ProgressEvent{
-					Action: "upload",
-					Path:   change.Path,
-					Error:  err,
-				})
-				result.Errors = append(result.Errors, fmt.Errorf("%s: %w", change.Path, err))
-				continue
-			}
-			result.Uploaded = append(result.Uploaded, change.Path)
-
+			uploads = append(uploads, change)
 		case "delete":
-			s.progress(ProgressEvent{
-				Action:  "delete",
-				Path:    change.Path,
-				Current: i + 1,
-				Total:   total,
-			})
+			deletes = append(deletes, change)
+		}
+	}
 
-			remoteKey := s.remoteKey(change.Path)
-			if err := s.storage.Delete(ctx, remoteKey); err != nil {
-				result.Errors = append(result.Errors, fmt.Errorf("delete %s: %w", change.Path, err))
-				continue
+	total := len(changes)
+	var mu sync.Mutex
+	var completed atomic.Int32
+
+	// Process uploads concurrently
+	if len(uploads) > 0 {
+		sem := make(chan struct{}, defaultWorkers)
+		var wg sync.WaitGroup
+
+		for _, change := range uploads {
+			wg.Add(1)
+			go func(change FileChange) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				n := int(completed.Add(1))
+				s.progress(ProgressEvent{
+					Action:  "upload",
+					Path:    change.Path,
+					Size:    change.LocalSize,
+					Current: n,
+					Total:   total,
+				})
+
+				if err := s.uploadFile(ctx, change.Path); err != nil {
+					s.progress(ProgressEvent{
+						Action: "upload",
+						Path:   change.Path,
+						Error:  err,
+					})
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Errorf("%s: %w", change.Path, err))
+					mu.Unlock()
+					return
+				}
+				mu.Lock()
+				result.Uploaded = append(result.Uploaded, change.Path)
+				mu.Unlock()
+			}(change)
+		}
+		wg.Wait()
+	}
+
+	// Process deletes (use batch delete if available, otherwise concurrent)
+	if len(deletes) > 0 {
+		deleteKeys := make([]string, len(deletes))
+		for i, change := range deletes {
+			deleteKeys[i] = s.remoteKey(change.Path)
+		}
+		if err := s.storage.DeleteBatch(ctx, deleteKeys); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("batch delete: %w", err))
+		} else {
+			for _, change := range deletes {
+				s.state.RemoveFile(change.Path)
+				result.Deleted = append(result.Deleted, change.Path)
 			}
-			s.state.RemoveFile(change.Path)
-			result.Deleted = append(result.Deleted, change.Path)
 		}
 	}
 
@@ -255,27 +289,47 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 		}
 	}
 
-	// Download files with progress
+	// Download files concurrently
 	total := len(toDownload)
-	for i, task := range toDownload {
-		s.progress(ProgressEvent{
-			Action:  "download",
-			Path:    task.localPath,
-			Size:    task.remoteObj.Size,
-			Current: i + 1,
-			Total:   total,
-		})
+	if total > 0 {
+		sem := make(chan struct{}, defaultWorkers)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var completed atomic.Int32
 
-		if err := s.downloadFile(ctx, task.localPath, task.remoteObj.Key); err != nil {
-			s.progress(ProgressEvent{
-				Action: "download",
-				Path:   task.localPath,
-				Error:  err,
-			})
-			result.Errors = append(result.Errors, fmt.Errorf("%s: %w", task.localPath, err))
-			continue
+		for _, task := range toDownload {
+			wg.Add(1)
+			go func(task downloadTask) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				n := int(completed.Add(1))
+				s.progress(ProgressEvent{
+					Action:  "download",
+					Path:    task.localPath,
+					Size:    task.remoteObj.Size,
+					Current: n,
+					Total:   total,
+				})
+
+				if err := s.downloadFile(ctx, task.localPath, task.remoteObj.Key); err != nil {
+					s.progress(ProgressEvent{
+						Action: "download",
+						Path:   task.localPath,
+						Error:  err,
+					})
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Errorf("%s: %w", task.localPath, err))
+					mu.Unlock()
+					return
+				}
+				mu.Lock()
+				result.Downloaded = append(result.Downloaded, task.localPath)
+				mu.Unlock()
+			}(task)
 		}
-		result.Downloaded = append(result.Downloaded, task.localPath)
+		wg.Wait()
 	}
 
 	s.progress(ProgressEvent{Action: "download", Complete: true, Total: total})

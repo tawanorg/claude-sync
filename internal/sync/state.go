@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/tawanorg/claude-sync/internal/config"
@@ -30,6 +31,7 @@ type SyncState struct {
 
 	// savePath is the custom path to save state to (if set)
 	savePath string `json:"-"`
+	mu       sync.Mutex `json:"-"`
 }
 
 func LoadState() (*SyncState, error) {
@@ -101,6 +103,8 @@ func (s *SyncState) Save() error {
 }
 
 func (s *SyncState) UpdateFile(relativePath string, info os.FileInfo, hash string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.Files[relativePath] = &FileState{
 		Path:    relativePath,
 		Hash:    hash,
@@ -110,16 +114,22 @@ func (s *SyncState) UpdateFile(relativePath string, info os.FileInfo, hash strin
 }
 
 func (s *SyncState) MarkUploaded(relativePath string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if f, ok := s.Files[relativePath]; ok {
 		f.Uploaded = time.Now()
 	}
 }
 
 func (s *SyncState) GetFile(relativePath string) *FileState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.Files[relativePath]
 }
 
 func (s *SyncState) RemoveFile(relativePath string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.Files, relativePath)
 }
 
