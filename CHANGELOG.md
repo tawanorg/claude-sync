@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/tawanorg/claude-sync/compare/v1.3.0...v1.4.0) (2026-03-25)
+
+
+### Features
+
+* enhance exclude patterns and add comprehensive tests ([d5d4f8b](https://github.com/tawanorg/claude-sync/commit/d5d4f8b7561a47761eb9ce90b3e84b1e6fc8cc4a)), closes [#9](https://github.com/tawanorg/claude-sync/issues/9) [#9](https://github.com/tawanorg/claude-sync/issues/9)
+
 # [1.3.0](https://github.com/tawanorg/claude-sync/compare/v1.2.2...v1.3.0) (2026-03-25)
 
 
