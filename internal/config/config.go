@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tawanorg/claude-sync/internal/storage"
 	"gopkg.in/yaml.v3"
@@ -159,21 +160,42 @@ func (c *Config) IsLegacyConfig() bool {
 }
 
 // IsExcluded returns true if the given relative path matches any exclude pattern.
-// Patterns use filepath.Match syntax (e.g. "plugins/marketplace*", "*.tmp").
-// A pattern can also be a plain prefix match (e.g. "plugins/marketplace").
+// Patterns support:
+//   - filepath.Match glob syntax (e.g. "plugins/marketplace*", "*.tmp")
+//   - Directory prefix (e.g. "plugins/marketplace" matches everything under it)
+//   - Recursive wildcard (e.g. "plugins/cache/**" matches directory and all contents)
+//   - Filename glob (e.g. "*.tmp" matches "foo/bar/file.tmp")
 func (c *Config) IsExcluded(relPath string) bool {
 	for _, pattern := range c.Exclude {
-		// Try glob match
+		// Handle "dir/**" pattern: match directory and everything under it
+		if strings.HasSuffix(pattern, "/**") {
+			dirPrefix := strings.TrimSuffix(pattern, "/**")
+			if relPath == dirPrefix || strings.HasPrefix(relPath, dirPrefix+"/") {
+				return true
+			}
+			continue
+		}
+
+		// Try glob match on full path
 		matched, err := filepath.Match(pattern, relPath)
 		if err == nil && matched {
 			return true
 		}
+
+		// Try glob match on filename only (for patterns like "*.tmp")
+		if strings.Contains(pattern, "*") || strings.Contains(pattern, "?") {
+			if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
+				return true
+			}
+		}
+
 		// Also match if the path starts with the pattern as a directory prefix
 		// This lets "plugins/marketplace" exclude everything under that dir
 		if len(relPath) > len(pattern) && relPath[:len(pattern)] == pattern &&
 			(relPath[len(pattern)] == '/' || relPath[len(pattern)] == '\\') {
 			return true
 		}
+
 		// Exact match
 		if relPath == pattern {
 			return true

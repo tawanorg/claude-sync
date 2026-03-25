@@ -203,3 +203,55 @@ func TestSyncPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestIsExcluded(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		patterns []string
+		expected bool
+	}{
+		// Directory wildcard patterns with /**
+		{"exclude dir with /**", "plugins/cache/foo/bar.js", []string{"plugins/cache/**"}, true},
+		{"exclude dir itself", "plugins/cache", []string{"plugins/cache/**"}, true},
+		{"exclude nested dir", "plugins/marketplaces/repo/file.txt", []string{"plugins/marketplaces/**"}, true},
+		{"non-matching dir", "plugins/installed.json", []string{"plugins/cache/**"}, false},
+
+		// Filename glob patterns
+		{"exclude by extension", "projects/foo/debug.tmp", []string{"*.tmp"}, true},
+		{"exclude dotfile glob", "projects/.DS_Store", []string{".*"}, true},
+		{"non-matching extension", "projects/foo/file.json", []string{"*.tmp"}, false},
+
+		// Exact path patterns
+		{"exact file match", "debug/log.txt", []string{"debug/log.txt"}, true},
+		{"exact dir pattern with /**", "debug", []string{"debug/**"}, true},
+
+		// Directory prefix (without /**)
+		{"dir prefix match", "plugins/marketplace/repo/file.txt", []string{"plugins/marketplace"}, true},
+		{"dir prefix exact", "plugins/marketplace", []string{"plugins/marketplace"}, true},
+
+		// Multiple patterns
+		{"first pattern matches", "plugins/cache/mod.js", []string{"plugins/cache/**", "*.tmp"}, true},
+		{"second pattern matches", "foo.tmp", []string{"plugins/cache/**", "*.tmp"}, true},
+		{"no pattern matches", "settings.json", []string{"plugins/cache/**", "*.tmp"}, false},
+
+		// Empty patterns
+		{"empty patterns", "anything.txt", []string{}, false},
+		{"nil-like empty", "anything.txt", nil, false},
+
+		// Edge cases
+		{"partial name no match", "plugins/cachedata/file.txt", []string{"plugins/cache/**"}, false},
+		{"shell-snapshots", "shell-snapshots/snap.json", []string{"shell-snapshots/**"}, true},
+		{"telemetry dir", "telemetry/data.json", []string{"telemetry/**"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Exclude: tt.patterns}
+			result := cfg.IsExcluded(tt.path)
+			if result != tt.expected {
+				t.Errorf("IsExcluded(%q) with patterns %v = %v, want %v", tt.path, tt.patterns, result, tt.expected)
+			}
+		})
+	}
+}
