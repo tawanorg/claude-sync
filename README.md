@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@tawandotorg/claude-sync)](https://www.npmjs.com/package/@tawandotorg/claude-sync)
 
-[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Security](#security)
+[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Auto-Sync](#auto-sync-hooks) • [Security](#security)
 
 </div>
 
@@ -25,6 +25,8 @@
 - **Interactive wizard**: Arrow-key driven setup with validation
 - **Self-updating**: `claude-sync update` to get the latest version
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
+- **Compression**: Gzip compression before encryption for faster syncs
+- **Auto-sync hooks**: Optional Claude Code hooks for automatic push/pull
 
 <div align="center">
 <img src="assets/claude-sync.gif" alt="Claude Sync Demo" width="100%">
@@ -147,6 +149,7 @@ claude-sync pull
 | `~/.claude/plugins/` | Plugins |
 | `~/.claude/rules/` | Custom rules |
 | `~/.claude/settings.json` | Settings |
+| `~/.claude/settings.local.json` | Local settings |
 | `~/.claude/CLAUDE.md` | Global instructions |
 
 ## Limitations
@@ -181,6 +184,7 @@ claude-sync diff        # Show differences between local and remote
 claude-sync conflicts   # List and resolve conflicts
 claude-sync reset       # Reset configuration (forgot passphrase)
 claude-sync update      # Update to latest version
+claude-sync changelog   # Show release history
 claude-sync --help      # Show all commands
 ```
 
@@ -213,6 +217,40 @@ claude-sync pull -q
 claude-sync update --check   # Check without installing
 claude-sync update           # Download and install latest version
 ```
+
+### Changelog
+
+```bash
+claude-sync changelog            # Show recent releases
+claude-sync changelog --limit 5  # Show last 5 releases
+```
+
+## Auto-Sync Hooks
+
+Automatically sync when starting or exiting Claude Code sessions using built-in hooks.
+
+```bash
+claude-sync auto enable   # Install auto-sync hooks into Claude Code
+claude-sync auto disable  # Remove auto-sync hooks
+claude-sync auto status   # Show current hook status
+```
+
+When enabled, hooks will:
+- **SessionStart**: Pull latest changes from remote
+- **Stop**: Push local changes to remote
+
+## Exclude Patterns
+
+Skip specific files or directories during sync by adding exclude patterns to your config (`~/.claude-sync/config.yaml`):
+
+```yaml
+exclude:
+  - "*.tmp"
+  - "projects/*/node_modules/*"
+  - "projects/*/.git/*"
+```
+
+Patterns use glob syntax and are matched against paths relative to `~/.claude`.
 
 ## Shell Integration
 
@@ -291,11 +329,12 @@ claude-sync push             # Re-upload from this device
 
 ## Security
 
-- Files encrypted with [age](https://github.com/FiloSottile/age) before upload
+- Files compressed with gzip, then encrypted with [age](https://github.com/FiloSottile/age) before upload
 - Passphrase-derived keys use Argon2 (memory-hard KDF)
 - Passphrase is never stored - only the derived key at `~/.claude-sync/age-key.txt`
 - Cloud storage is private (API key/IAM auth)
 - Config files stored with 0600 permissions
+- Backward compatible: can read both compressed and uncompressed remote files
 
 ## Cost
 
