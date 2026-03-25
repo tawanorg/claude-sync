@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/tawanorg/claude-sync/compare/v1.4.0...v1.5.0) (2026-03-25)
+
+
+### Bug Fixes
+
+* remove --quiet from auto-sync hooks so users see sync progress ([e620333](https://github.com/tawanorg/claude-sync/commit/e6203336a36d082f09efb2cafc56dd1541697b7f))
+
+
+### Features
+
+* add auto-sync command for Claude Code hooks ([3ff7628](https://github.com/tawanorg/claude-sync/commit/3ff762801df9c84df134363560ff69e3f93bb1b2))
+
 # [1.4.0](https://github.com/tawanorg/claude-sync/compare/v1.3.0...v1.4.0) (2026-03-25)
 
 
