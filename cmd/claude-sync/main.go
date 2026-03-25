@@ -2227,13 +2227,13 @@ func (s *settingsJSON) addClaudeSyncHooks() {
 	}
 	hooks := s.data["hooks"].(map[string]interface{})
 
-	// Add SessionStart -> pull
+	// Add SessionStart -> pull (quiet to avoid cluttering hook output)
 	startEntries, _ := hooks["SessionStart"].([]interface{})
-	hooks["SessionStart"] = append(startEntries, makeHookEntry("claude-sync pull"))
+	hooks["SessionStart"] = append(startEntries, makeHookEntry("claude-sync pull --quiet"))
 
-	// Add Stop -> push
+	// Add Stop -> push (quiet to avoid cluttering hook output)
 	stopEntries, _ := hooks["Stop"].([]interface{})
-	hooks["Stop"] = append(stopEntries, makeHookEntry("claude-sync push"))
+	hooks["Stop"] = append(stopEntries, makeHookEntry("claude-sync push --quiet"))
 }
 
 func (s *settingsJSON) removeClaudeSyncHooks() {
@@ -2296,8 +2296,8 @@ func autoEnableCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Printf("  %s✓%s Auto-sync hooks installed\n", colorGreen, colorReset)
 			fmt.Println()
-			fmt.Printf("  %sSessionStart%s -> %sclaude-sync pull%s\n", colorBold, colorReset, colorCyan, colorReset)
-			fmt.Printf("  %sStop%s         -> %sclaude-sync push%s\n", colorBold, colorReset, colorCyan, colorReset)
+			fmt.Printf("  %sSessionStart%s -> %sclaude-sync pull --quiet%s\n", colorBold, colorReset, colorCyan, colorReset)
+			fmt.Printf("  %sStop%s         -> %sclaude-sync push --quiet%s\n", colorBold, colorReset, colorCyan, colorReset)
 			fmt.Println()
 			fmt.Printf("  %sClaude Code will now sync automatically on session start and end.%s\n", colorDim, colorReset)
 			fmt.Println()
