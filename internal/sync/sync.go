@@ -1,8 +1,11 @@
 package sync
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -356,8 +359,14 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	// Compress
+	compressed, err := gzipCompress(data)
+	if err != nil {
+		return fmt.Errorf("failed to compress: %w", err)
+	}
+
 	// Encrypt
-	encrypted, err := s.encryptor.Encrypt(data)
+	encrypted, err := s.encryptor.Encrypt(compressed)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt: %w", err)
 	}
@@ -388,6 +397,14 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	data, err := s.encryptor.Decrypt(encrypted)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	// Decompress if gzipped (backward-compatible with uncompressed data)
+	if isGzipped(data) {
+		data, err = gzipDecompress(data)
+		if err != nil {
+			return fmt.Errorf("failed to decompress: %w", err)
+		}
 	}
 
 	// Ensure directory exists
@@ -648,4 +665,33 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 	}
 
 	return entries, nil
+}
+
+// isGzipped checks if data starts with the gzip magic number (0x1f 0x8b).
+func isGzipped(data []byte) bool {
+	return len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b
+}
+
+func gzipCompress(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func gzipDecompress(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }
