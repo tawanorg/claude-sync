@@ -1,3 +1,17 @@
+# [1.3.0](https://github.com/tawanorg/claude-sync/compare/v1.2.2...v1.3.0) (2026-03-25)
+
+
+### Features
+
+* add exclude list to skip paths during sync ([73735f1](https://github.com/tawanorg/claude-sync/commit/73735f171c9b965a2c0d6eb84b2e7a9701a5351b))
+* add exclude list to skip paths during sync ([02e5e4e](https://github.com/tawanorg/claude-sync/commit/02e5e4e00753632ac429b76a046d8454712531e6))
+* gzip compression before encryption for faster transfers ([d853d36](https://github.com/tawanorg/claude-sync/commit/d853d36bf2a59f10d95651514a2661bfda08ff5e))
+
+
+### Performance Improvements
+
+* concurrent uploads/downloads with 10 worker pool ([1b32c63](https://github.com/tawanorg/claude-sync/commit/1b32c637d949bb552df82075ab26bd0ee55fd2da))
+
 ## [1.2.2](https://github.com/tawanorg/claude-sync/compare/v1.2.1...v1.2.2) (2026-02-09)
 
 
