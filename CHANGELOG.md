@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/tawanorg/claude-sync/compare/v1.5.0...v1.5.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* update sync state after resolving conflicts ([b533622](https://github.com/tawanorg/claude-sync/commit/b5336220f6eb70e2cf0c6d1696962d5e17625f1a))
+
 # [1.5.0](https://github.com/tawanorg/claude-sync/compare/v1.4.0...v1.5.0) (2026-03-25)
 
 
