@@ -143,8 +143,14 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func GetLocalFiles(claudeDir string, syncPaths []string) (map[string]os.FileInfo, error) {
+func GetLocalFiles(claudeDir string, syncPaths []string, excludeFn ...func(string) bool) (map[string]os.FileInfo, error) {
 	files := make(map[string]os.FileInfo)
+
+	// Use the first exclude function if provided
+	var isExcluded func(string) bool
+	if len(excludeFn) > 0 && excludeFn[0] != nil {
+		isExcluded = excludeFn[0]
+	}
 
 	for _, syncPath := range syncPaths {
 		fullPath := filepath.Join(claudeDir, syncPath)
@@ -162,15 +168,27 @@ func GetLocalFiles(claudeDir string, syncPaths []string) (map[string]os.FileInfo
 				if err != nil {
 					return err
 				}
+
+				relPath, _ := filepath.Rel(claudeDir, path)
+				// Normalize to forward slashes for consistent matching
+				relPath = filepath.ToSlash(relPath)
+
+				// Skip excluded directories entirely
 				if fi.IsDir() {
+					if isExcluded != nil && isExcluded(relPath) {
+						return filepath.SkipDir
+					}
 					return nil
 				}
 				// Skip symlinks
 				if fi.Mode()&os.ModeSymlink != 0 {
 					return nil
 				}
+				// Skip excluded files
+				if isExcluded != nil && isExcluded(relPath) {
+					return nil
+				}
 
-				relPath, _ := filepath.Rel(claudeDir, path)
 				files[relPath] = fi
 				return nil
 			})
@@ -180,6 +198,10 @@ func GetLocalFiles(claudeDir string, syncPaths []string) (map[string]os.FileInfo
 		} else {
 			// Skip symlinks
 			if info.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
+			// Skip excluded files
+			if isExcluded != nil && isExcluded(syncPath) {
 				continue
 			}
 			files[syncPath] = info
@@ -197,10 +219,10 @@ type FileChange struct {
 	LocalTime time.Time
 }
 
-func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string) ([]FileChange, error) {
+func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string, excludeFn ...func(string) bool) ([]FileChange, error) {
 	var changes []FileChange
 
-	localFiles, err := GetLocalFiles(claudeDir, syncPaths)
+	localFiles, err := GetLocalFiles(claudeDir, syncPaths, excludeFn...)
 	if err != nil {
 		return nil, err
 	}
