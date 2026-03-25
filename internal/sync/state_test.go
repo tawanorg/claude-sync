@@ -381,7 +381,9 @@ func TestDetectChangesWithExclude(t *testing.T) {
 	state := NewState()
 
 	// Create files including some that should be excluded
-	os.MkdirAll(filepath.Join(tmpDir, "plugins/cache"), 0755)
+	if err := os.MkdirAll(filepath.Join(tmpDir, "plugins/cache"), 0755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
 	files := map[string]string{
 		"settings.json":         "{}",
 		"plugins/cache/big.dat": "lots of data",

@@ -1196,13 +1196,19 @@ Examples:
 				return nil
 			}
 
+			// Load sync state to update after resolution
+			state, err := sync.LoadState()
+			if err != nil {
+				return fmt.Errorf("failed to load sync state: %w", err)
+			}
+
 			// Batch resolve mode
 			if resolveAll != "" {
-				return batchResolveConflicts(conflicts, resolveAll)
+				return batchResolveConflicts(conflicts, resolveAll, claudeDir, state)
 			}
 
 			// Interactive mode
-			return interactiveResolveConflicts(conflicts, claudeDir)
+			return interactiveResolveConflicts(conflicts, claudeDir, state)
 		},
 	}
 
@@ -1247,12 +1253,13 @@ func findConflicts(claudeDir string) ([]conflictFile, error) {
 	return conflicts, err
 }
 
-func batchResolveConflicts(conflicts []conflictFile, keep string) error {
+func batchResolveConflicts(conflicts []conflictFile, keep string, claudeDir string, state *sync.SyncState) error {
 	keep = strings.ToLower(keep)
 	if keep != "local" && keep != "remote" {
 		return fmt.Errorf("--keep must be 'local' or 'remote'")
 	}
 
+	resolved := 0
 	for _, c := range conflicts {
 		if keep == "local" {
 			// Delete conflict file, keep local
@@ -1269,13 +1276,30 @@ func batchResolveConflicts(conflicts []conflictFile, keep string) error {
 			}
 			fmt.Printf("%s✓%s Kept remote: %s\n", colorGreen, colorReset, filepath.Base(c.OriginalPath))
 		}
+
+		// Update state with the resolved file's hash
+		relPath, _ := filepath.Rel(claudeDir, c.OriginalPath)
+		if info, err := os.Stat(c.OriginalPath); err == nil {
+			if hash, err := sync.HashFile(c.OriginalPath); err == nil {
+				state.UpdateFile(relPath, info, hash)
+				state.MarkUploaded(relPath)
+			}
+		}
+		resolved++
 	}
 
-	fmt.Printf("\n%s✓%s Resolved %d conflict(s)\n", colorGreen, colorReset, len(conflicts))
+	// Save updated state
+	if resolved > 0 {
+		if err := state.Save(); err != nil {
+			fmt.Printf("%s⚠%s Warning: failed to save state: %v\n", colorYellow, colorReset, err)
+		}
+	}
+
+	fmt.Printf("\n%s✓%s Resolved %d conflict(s)\n", colorGreen, colorReset, resolved)
 	return nil
 }
 
-func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string) error {
+func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string, state *sync.SyncState) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Println("For each conflict, choose how to resolve:")
@@ -1320,6 +1344,13 @@ func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string) err
 					fmt.Printf("        %s✗%s Error: %v\n", colorYellow, colorReset, err)
 				} else {
 					fmt.Printf("        %s✓%s Kept local version\n\n", colorGreen, colorReset)
+					// Update state with the kept file's hash
+					if info, err := os.Stat(c.OriginalPath); err == nil {
+						if hash, err := sync.HashFile(c.OriginalPath); err == nil {
+							state.UpdateFile(relOriginal, info, hash)
+							state.MarkUploaded(relOriginal)
+						}
+					}
 					resolved++
 				}
 				break promptLoop
@@ -1330,6 +1361,13 @@ func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string) err
 					fmt.Printf("        %s✗%s Error: %v\n", colorYellow, colorReset, err)
 				} else {
 					fmt.Printf("        %s✓%s Replaced with remote version\n\n", colorGreen, colorReset)
+					// Update state with the new file's hash
+					if info, err := os.Stat(c.OriginalPath); err == nil {
+						if hash, err := sync.HashFile(c.OriginalPath); err == nil {
+							state.UpdateFile(relOriginal, info, hash)
+							state.MarkUploaded(relOriginal)
+						}
+					}
 					resolved++
 				}
 				break promptLoop
@@ -1343,12 +1381,25 @@ func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string) err
 				break promptLoop
 
 			case "q", "quit":
+				// Save state before quitting if any conflicts were resolved
+				if resolved > 0 {
+					if err := state.Save(); err != nil {
+						fmt.Printf("%s⚠%s Warning: failed to save state: %v\n", colorYellow, colorReset, err)
+					}
+				}
 				fmt.Printf("\n%s✓%s Resolved %d of %d conflict(s)\n", colorGreen, colorReset, resolved, len(conflicts))
 				return nil
 
 			default:
 				fmt.Printf("        %sInvalid choice. Use l/r/d/s/q%s\n", colorDim, colorReset)
 			}
+		}
+	}
+
+	// Save updated state
+	if resolved > 0 {
+		if err := state.Save(); err != nil {
+			fmt.Printf("%s⚠%s Warning: failed to save state: %v\n", colorYellow, colorReset, err)
 		}
 	}
 
