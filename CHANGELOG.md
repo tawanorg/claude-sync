@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/tawanorg/claude-sync/compare/v1.5.1...v1.6.0) (2026-03-25)
+
+
+### Features
+
+* add changelog command to view release history ([5581559](https://github.com/tawanorg/claude-sync/commit/5581559f88f7a53665dd1f4f17c2de21752fdafb))
+
 ## [1.5.1](https://github.com/tawanorg/claude-sync/compare/v1.5.0...v1.5.1) (2026-03-25)
 
 
