@@ -30,7 +30,7 @@ type SyncState struct {
 	LastPull time.Time             `json:"last_pull,omitempty"`
 
 	// savePath is the custom path to save state to (if set)
-	savePath string `json:"-"`
+	savePath string     `json:"-"`
 	mu       sync.Mutex `json:"-"`
 }
 

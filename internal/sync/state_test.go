@@ -306,14 +306,14 @@ func TestGetLocalFilesWithExclude(t *testing.T) {
 	}
 
 	fileContents := map[string]string{
-		"CLAUDE.md":                                     "# Claude",
-		"settings.json":                                 "{}",
-		"plugins/installed_plugins.json":                "{}",
-		"plugins/cache/thedotmack/claude-mem/index.js":  "module.exports = {}",
-		"plugins/marketplaces/repo/package.json":        `{"name": "repo"}`,
-		"projects/myproject/memory.md":                  "# Memory",
-		"agents/seo.md":                                 "# SEO Agent",
-		"debug/log.txt":                                 "debug output",
+		"CLAUDE.md":                      "# Claude",
+		"settings.json":                  "{}",
+		"plugins/installed_plugins.json": "{}",
+		"plugins/cache/thedotmack/claude-mem/index.js": "module.exports = {}",
+		"plugins/marketplaces/repo/package.json":       `{"name": "repo"}`,
+		"projects/myproject/memory.md":                 "# Memory",
+		"agents/seo.md":                                "# SEO Agent",
+		"debug/log.txt":                                "debug output",
 	}
 
 	for path, content := range fileContents {
