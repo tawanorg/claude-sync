@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/tawanorg/claude-sync/compare/v1.6.1...v1.6.2) (2026-03-27)
+
+
+### Bug Fixes
+
+* remove auto push/pull hooks to prevent session startup errors ([54d0bfe](https://github.com/tawanorg/claude-sync/commit/54d0bfe82e28cc750e57a498f685bf9f2f3ab8eb))
+
 # [1.6.0](https://github.com/tawanorg/claude-sync/compare/v1.5.1...v1.6.0) (2026-03-25)
 
 
