@@ -1,3 +1,10 @@
+## [1.6.3](https://github.com/tawanorg/claude-sync/compare/v1.6.2...v1.6.3) (2026-03-27)
+
+
+### Bug Fixes
+
+* remove claude-sync auto command ([96c4d73](https://github.com/tawanorg/claude-sync/commit/96c4d73fc9bcb7fc5f17323dd1b2319455bfd2a9))
+
 ## [1.6.2](https://github.com/tawanorg/claude-sync/compare/v1.6.1...v1.6.2) (2026-03-27)
 
 
