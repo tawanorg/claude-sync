@@ -64,6 +64,7 @@ func main() {
 		resetCmd(),
 		updateCmd(),
 		changelogCmd(),
+		mcpCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -741,7 +742,9 @@ func runGCSWizard(projectID, credentialsFile, bucket string) (*storage.StorageCo
 }
 
 func pushCmd() *cobra.Command {
-	return &cobra.Command{
+	var includeMCP bool
+
+	cmd := &cobra.Command{
 		Use:   "push",
 		Short: "Upload local changes to cloud storage",
 		Long:  `Encrypt and upload changed files from ~/.claude to cloud storage.`,
@@ -830,9 +833,19 @@ func pushCmd() *cobra.Command {
 				}
 			}
 
+			// MCP sync if enabled
+			if includeMCP || cfg.MCPSync {
+				if err := runMCPPush(ctx, syncer); err != nil {
+					return err
+				}
+			}
+
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
+	return cmd
 }
 
 func truncatePath(path string, maxLen int) string {
@@ -843,7 +856,7 @@ func truncatePath(path string, maxLen int) string {
 }
 
 func pullCmd() *cobra.Command {
-	var dryRun, force bool
+	var dryRun, force, includeMCP bool
 
 	cmd := &cobra.Command{
 		Use:   "pull",
@@ -965,12 +978,20 @@ Examples:
 				}
 			}
 
+			// MCP sync if enabled
+			if includeMCP || cfg.MCPSync {
+				if err := runMCPPull(ctx, syncer); err != nil {
+					return err
+				}
+			}
+
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be changed without making changes")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
+	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
 
 	return cmd
 }
@@ -2308,4 +2329,167 @@ func printReleaseBody(body string) {
 		// Regular text
 		fmt.Printf("  %s\n", line)
 	}
+}
+
+// MCP sync commands
+
+func mcpCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Manage MCP server sync",
+		Long:  `Sync global MCP server configurations from ~/.claude.json across devices.`,
+	}
+	cmd.AddCommand(
+		mcpListCmd(),
+		mcpPushCmd(),
+		mcpPullCmd(),
+	)
+	return cmd
+}
+
+func mcpListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List local MCP server configurations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			status, err := syncer.MCPStatus(ctx)
+			if err != nil {
+				return err
+			}
+
+			if status.ServerCount == 0 {
+				fmt.Printf("%s⋯%s No MCP servers found in %s\n", colorDim, colorReset, config.ClaudeJSONPath())
+				return nil
+			}
+
+			fmt.Printf("%sMCP Servers%s (%d total):\n\n", colorBold, colorReset, status.ServerCount)
+			for name := range status.Servers {
+				syncMark := fmt.Sprintf("%s●%s", colorGreen, colorReset)
+				if status.HasChanges {
+					syncMark = fmt.Sprintf("%s○%s", colorYellow, colorReset)
+				}
+				fmt.Printf("  %s %s\n", syncMark, name)
+			}
+
+			if status.HasChanges {
+				fmt.Printf("\n%s○ = has local changes not yet pushed%s\n", colorDim, colorReset)
+			}
+
+			return nil
+		},
+	}
+}
+
+func mcpPushCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "push",
+		Short: "Push MCP server configs to cloud storage",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			return runMCPPush(ctx, syncer)
+		},
+	}
+}
+
+func mcpPullCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pull",
+		Short: "Pull MCP server configs from cloud storage",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			return runMCPPull(ctx, syncer)
+		},
+	}
+}
+
+func runMCPPush(ctx context.Context, syncer *sync.Syncer) error {
+	result, err := syncer.PushMCP(ctx)
+	if err != nil {
+		return fmt.Errorf("MCP push failed: %w", err)
+	}
+
+	if !quiet {
+		if result.Unchanged {
+			fmt.Printf("%s✓%s MCP servers: no changes to push\n", colorGreen, colorReset)
+		} else {
+			fmt.Printf("%s✓%s MCP servers: %s%d servers pushed%s\n",
+				colorGreen, colorReset, colorGreen, result.ServersPushed, colorReset)
+		}
+	}
+	return nil
+}
+
+func runMCPPull(ctx context.Context, syncer *sync.Syncer) error {
+	result, err := syncer.PullMCP(ctx)
+	if err != nil {
+		return fmt.Errorf("MCP pull failed: %w", err)
+	}
+
+	if !quiet {
+		if result.NoRemote {
+			fmt.Printf("%s⋯%s MCP servers: no remote data found\n", colorDim, colorReset)
+			return nil
+		}
+
+		var parts []string
+		if len(result.Added) > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d added%s", colorGreen, len(result.Added), colorReset))
+			for _, name := range result.Added {
+				fmt.Printf("  %s+%s %s\n", colorGreen, colorReset, name)
+			}
+		}
+		if len(result.Updated) > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d updated%s", colorCyan, len(result.Updated), colorReset))
+			for _, name := range result.Updated {
+				fmt.Printf("  %s~%s %s\n", colorCyan, colorReset, name)
+			}
+		}
+		if len(result.Kept) > 0 {
+			parts = append(parts, fmt.Sprintf("%d unchanged", len(result.Kept)))
+		}
+		if len(result.Conflicts) > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d conflicts%s", colorYellow, len(result.Conflicts), colorReset))
+			for _, c := range result.Conflicts {
+				fmt.Printf("  %s!%s %s (kept local version)\n", colorYellow, colorReset, c.Key)
+			}
+		}
+
+		if len(parts) > 0 {
+			fmt.Printf("%s✓%s MCP pull complete: %s\n", colorGreen, colorReset, strings.Join(parts, ", "))
+		} else {
+			fmt.Printf("%s✓%s MCP servers: already up to date\n", colorGreen, colorReset)
+		}
+	}
+	return nil
 }
