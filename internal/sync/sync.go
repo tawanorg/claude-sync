@@ -95,6 +95,18 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	}, nil
 }
 
+// NewSyncerWith creates a Syncer with pre-built dependencies (for testing).
+func NewSyncerWith(cfg *config.Config, store storage.Storage, enc *crypto.Encryptor, state *SyncState, claudeDir string, quiet bool) *Syncer {
+	return &Syncer{
+		storage:   store,
+		encryptor: enc,
+		state:     state,
+		claudeDir: claudeDir,
+		quiet:     quiet,
+		cfg:       cfg,
+	}
+}
+
 func (s *Syncer) SetProgressFunc(fn ProgressFunc) {
 	s.onProgress = fn
 }
