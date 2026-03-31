@@ -29,6 +29,9 @@ type SyncState struct {
 	LastPush time.Time             `json:"last_push,omitempty"`
 	LastPull time.Time             `json:"last_pull,omitempty"`
 
+	// MCPBaseline stores the last-synced normalized MCP server configs for three-way merge.
+	MCPBaseline json.RawMessage `json:"mcp_baseline,omitempty"`
+
 	// savePath is the custom path to save state to (if set)
 	savePath string     `json:"-"`
 	mu       sync.Mutex `json:"-"`
@@ -136,6 +139,36 @@ func (s *SyncState) RemoveFile(relativePath string) {
 // IsEmpty returns true if no files have been synced yet (first sync)
 func (s *SyncState) IsEmpty() bool {
 	return len(s.Files) == 0 && s.LastSync.IsZero()
+}
+
+// GetMCPBaseline returns the last-synced MCP server configs used for three-way merge.
+func (s *SyncState) GetMCPBaseline() (MCPServers, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.MCPBaseline) == 0 {
+		return nil, nil
+	}
+	var servers MCPServers
+	if err := json.Unmarshal(s.MCPBaseline, &servers); err != nil {
+		return nil, fmt.Errorf("failed to parse MCP baseline: %w", err)
+	}
+	return servers, nil
+}
+
+// SetMCPBaseline stores the normalized MCP server configs as the baseline for future merges.
+func (s *SyncState) SetMCPBaseline(servers MCPServers) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if servers == nil {
+		s.MCPBaseline = nil
+		return nil
+	}
+	data, err := json.Marshal(servers)
+	if err != nil {
+		return fmt.Errorf("failed to serialize MCP baseline: %w", err)
+	}
+	s.MCPBaseline = data
+	return nil
 }
 
 func HashFile(path string) (string, error) {

@@ -15,6 +15,10 @@ const (
 	ConfigFile = "config.yaml"
 	StateFile  = "state.json"
 	AgeKeyFile = "age-key.txt"
+
+	// MCPRemoteKey is the remote storage key for synced MCP server configs.
+	// The _external/ prefix separates it from ~/.claude/-relative files.
+	MCPRemoteKey = "_external/mcp-servers.json"
 )
 
 type Config struct {
@@ -34,11 +38,17 @@ type Config struct {
 	// Exclude patterns (glob-style) for paths to skip during sync
 	Exclude []string `yaml:"exclude,omitempty"`
 
+	// MCPSync enables syncing MCP server configs from ~/.claude.json
+	MCPSync bool `yaml:"mcp_sync,omitempty"`
+
 	// ClaudeDirOverride allows overriding the default ~/.claude path (for testing)
 	ClaudeDirOverride string `yaml:"-"`
 
 	// StateDirOverride allows overriding the state file directory (for testing)
 	StateDirOverride string `yaml:"-"`
+
+	// ClaudeJSONOverride allows overriding the ~/.claude.json path (for testing)
+	ClaudeJSONOverride string `yaml:"-"`
 }
 
 // SyncPaths defines which paths under ~/.claude to sync
@@ -80,6 +90,15 @@ func ClaudeDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".claude")
+}
+
+// ClaudeJSONPath returns the path to ~/.claude.json where global MCP servers are configured.
+func ClaudeJSONPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude.json")
 }
 
 func Load() (*Config, error) {
