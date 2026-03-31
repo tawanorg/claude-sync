@@ -697,7 +697,7 @@ func (s *Syncer) PushMCP(ctx context.Context) (*MCPPushResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read MCP servers: %w", err)
 	}
-	if servers == nil || len(servers) == 0 {
+	if len(servers) == 0 {
 		result.Unchanged = true
 		return result, nil
 	}
