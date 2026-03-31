@@ -1,3 +1,17 @@
+# [1.7.0](https://github.com/tawanorg/claude-sync/compare/v1.6.3...v1.7.0) (2026-03-31)
+
+
+### Bug Fixes
+
+* add commands directory to SyncPaths ([6fb290d](https://github.com/tawanorg/claude-sync/commit/6fb290dbffb96b0797c24368caf626ee7d8780f0)), closes [#14](https://github.com/tawanorg/claude-sync/issues/14)
+* remove redundant nil check on map to fix gosimple lint ([f41fbee](https://github.com/tawanorg/claude-sync/commit/f41fbee7d6480171be1b3a26f3f0456d21918fb8))
+
+
+### Features
+
+* add MCP server sync support ([#15](https://github.com/tawanorg/claude-sync/issues/15)) ([43b1318](https://github.com/tawanorg/claude-sync/commit/43b1318921e0288169e261ecdf25cec251912df7))
+* add test coverage check to CI ([a78e191](https://github.com/tawanorg/claude-sync/commit/a78e191d40c5abba6245018a263f10ba4fe37cc8))
+
 ## [1.6.3](https://github.com/tawanorg/claude-sync/compare/v1.6.2...v1.6.3) (2026-03-27)
 
 
