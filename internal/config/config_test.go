@@ -184,6 +184,7 @@ func TestSyncPaths(t *testing.T) {
 		"settings.json":       false,
 		"settings.local.json": false,
 		"agents":              false,
+		"commands":            false,
 		"skills":              false,
 		"plugins":             false,
 		"projects":            false,

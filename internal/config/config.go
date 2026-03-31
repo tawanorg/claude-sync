@@ -57,6 +57,7 @@ var SyncPaths = []string{
 	"settings.json",
 	"settings.local.json",
 	"agents",
+	"commands",
 	"skills",
 	"plugins",
 	"projects",
