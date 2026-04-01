@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/tawanorg/claude-sync/compare/v1.7.0...v1.8.0) (2026-04-01)
+
+
+### Features
+
+* add NewSyncerWith for dependency-injected testing ([60c21bc](https://github.com/tawanorg/claude-sync/commit/60c21bc3fd931b06e24581442ab68250b4614cf3))
+
 # [1.7.0](https://github.com/tawanorg/claude-sync/compare/v1.6.3...v1.7.0) (2026-03-31)
 
 
