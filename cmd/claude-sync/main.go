@@ -22,6 +22,7 @@ import (
 	"github.com/tawanorg/claude-sync/internal/crypto"
 	"github.com/tawanorg/claude-sync/internal/storage"
 	"github.com/tawanorg/claude-sync/internal/sync"
+	"github.com/tawanorg/claude-sync/internal/util"
 
 	// Register storage adapters
 	_ "github.com/tawanorg/claude-sync/internal/storage/gcs"
@@ -779,15 +780,15 @@ func pushCmd() *cobra.Command {
 						} else {
 							// Clear line and show progress
 							progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
-							shortPath := truncatePath(event.Path, 50)
+							shortPath := util.TruncatePath(event.Path, 50)
 							fmt.Printf("\r%s↑%s %s%s%s %s (%s)%s",
 								colorCyan, colorReset,
 								colorDim, progress, colorReset,
-								shortPath, formatSize(event.Size),
+								shortPath, util.FormatSize(event.Size),
 								strings.Repeat(" ", 10))
 						}
 					case "delete":
-						shortPath := truncatePath(event.Path, 50)
+						shortPath := util.TruncatePath(event.Path, 50)
 						fmt.Printf("\r%s✗%s [%d/%d] %s (deleted)%s\n",
 							colorYellow, colorReset,
 							event.Current, event.Total,
@@ -846,13 +847,6 @@ func pushCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
 	return cmd
-}
-
-func truncatePath(path string, maxLen int) string {
-	if len(path) <= maxLen {
-		return path
-	}
-	return "..." + path[len(path)-maxLen+3:]
 }
 
 func pullCmd() *cobra.Command {
@@ -920,11 +914,11 @@ Examples:
 						} else {
 							// Clear line and show progress
 							progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
-							shortPath := truncatePath(event.Path, 50)
+							shortPath := util.TruncatePath(event.Path, 50)
 							fmt.Printf("\r%s↓%s %s%s%s %s (%s)%s",
 								colorGreen, colorReset,
 								colorDim, progress, colorReset,
-								shortPath, formatSize(event.Size),
+								shortPath, util.FormatSize(event.Size),
 								strings.Repeat(" ", 10))
 						}
 					case "conflict":
@@ -1040,7 +1034,7 @@ func statusCmd() *cobra.Command {
 			if len(added) > 0 {
 				fmt.Println("New files:")
 				for _, c := range added {
-					fmt.Printf("  + %s (%s)\n", c.Path, formatSize(c.LocalSize))
+					fmt.Printf("  + %s (%s)\n", c.Path, util.FormatSize(c.LocalSize))
 				}
 				fmt.Println()
 			}
@@ -1048,7 +1042,7 @@ func statusCmd() *cobra.Command {
 			if len(modified) > 0 {
 				fmt.Println("Modified files:")
 				for _, c := range modified {
-					fmt.Printf("  ~ %s (%s)\n", c.Path, formatSize(c.LocalSize))
+					fmt.Printf("  ~ %s (%s)\n", c.Path, util.FormatSize(c.LocalSize))
 				}
 				fmt.Println()
 			}
@@ -1118,7 +1112,7 @@ func diffCmd() *cobra.Command {
 			if len(localOnly) > 0 {
 				fmt.Printf("Local only (%d files):\n", len(localOnly))
 				for _, e := range localOnly {
-					fmt.Printf("  + %s (%s)\n", e.Path, formatSize(e.LocalSize))
+					fmt.Printf("  + %s (%s)\n", e.Path, util.FormatSize(e.LocalSize))
 				}
 				fmt.Println()
 			}
@@ -1126,7 +1120,7 @@ func diffCmd() *cobra.Command {
 			if len(remoteOnly) > 0 {
 				fmt.Printf("Remote only (%d files):\n", len(remoteOnly))
 				for _, e := range remoteOnly {
-					fmt.Printf("  - %s (%s)\n", e.Path, formatSize(e.RemoteSize))
+					fmt.Printf("  - %s (%s)\n", e.Path, util.FormatSize(e.RemoteSize))
 				}
 				fmt.Println()
 			}
@@ -1134,7 +1128,7 @@ func diffCmd() *cobra.Command {
 			if len(modified) > 0 {
 				fmt.Printf("Modified (%d files):\n", len(modified))
 				for _, e := range modified {
-					fmt.Printf("  ~ %s (local: %s, remote: %s)\n", e.Path, formatSize(e.LocalSize), formatSize(e.RemoteSize))
+					fmt.Printf("  ~ %s (local: %s, remote: %s)\n", e.Path, util.FormatSize(e.LocalSize), util.FormatSize(e.RemoteSize))
 				}
 				fmt.Println()
 			}
@@ -1147,24 +1141,6 @@ func diffCmd() *cobra.Command {
 	}
 }
 
-func formatSize(size int64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-
-	switch {
-	case size >= GB:
-		return fmt.Sprintf("%.1f GB", float64(size)/GB)
-	case size >= MB:
-		return fmt.Sprintf("%.1f MB", float64(size)/MB)
-	case size >= KB:
-		return fmt.Sprintf("%.1f KB", float64(size)/KB)
-	default:
-		return fmt.Sprintf("%d B", size)
-	}
-}
 
 type conflictFile struct {
 	ConflictPath string
@@ -1350,7 +1326,7 @@ func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string, sta
 
 		fmt.Printf("%s[%d/%d]%s %s\n", colorCyan, i+1, len(conflicts), colorReset, relOriginal)
 		fmt.Printf("        Local: %s  |  Remote: %s  |  Conflict from: %s\n",
-			formatSize(localSize), formatSize(conflictSize), c.Timestamp)
+			util.FormatSize(localSize), util.FormatSize(conflictSize), c.Timestamp)
 
 	promptLoop:
 		for {
@@ -1451,8 +1427,8 @@ func showDiff(localPath, conflictPath string) {
 			localInfo, _ := os.Stat(localPath)
 			conflictInfo, _ := os.Stat(conflictPath)
 			if localInfo != nil && conflictInfo != nil {
-				fmt.Printf("        Local:  %s (%s)\n", localPath, formatSize(localInfo.Size()))
-				fmt.Printf("        Remote: %s (%s)\n", conflictPath, formatSize(conflictInfo.Size()))
+				fmt.Printf("        Local:  %s (%s)\n", localPath, util.FormatSize(localInfo.Size()))
+				fmt.Printf("        Remote: %s (%s)\n", conflictPath, util.FormatSize(conflictInfo.Size()))
 			}
 		}
 	}
@@ -1605,7 +1581,7 @@ Examples:
 			}
 
 			// Compare versions (simple string comparison works for semver)
-			if compareVersions(currentVersion, latestVersion) >= 0 {
+			if util.CompareVersions(currentVersion, latestVersion) >= 0 {
 				fmt.Printf("%s✓%s Already up to date (v%s)\n", colorGreen, colorReset, currentVersion)
 				return nil
 			}
@@ -1621,7 +1597,7 @@ Examples:
 			}
 
 			// Find the right asset for this OS/arch
-			assetName := getBinaryName(latestVersion)
+			assetName := util.GetBinaryName(latestVersion)
 			var downloadURL string
 			for _, asset := range release.Assets {
 				if asset.Name == assetName {
@@ -1699,16 +1675,6 @@ func getLatestRelease() (*GitHubRelease, error) {
 	return &release, nil
 }
 
-func getBinaryName(version string) string {
-	goos := runtime.GOOS
-	goarch := runtime.GOARCH
-
-	name := fmt.Sprintf("claude-sync-%s-%s", goos, goarch)
-	if goos == "windows" {
-		name += ".exe"
-	}
-	return name
-}
 
 func downloadBinary(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
@@ -1752,31 +1718,7 @@ func replaceBinary(execPath string, newBinary []byte) error {
 	return nil
 }
 
-func compareVersions(v1, v2 string) int {
-	// Simple semver comparison
-	// Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2
-	parts1 := strings.Split(v1, ".")
-	parts2 := strings.Split(v2, ".")
 
-	for i := 0; i < 3; i++ {
-		var p1, p2 int
-		if i < len(parts1) {
-			_, _ = fmt.Sscanf(parts1[i], "%d", &p1)
-		}
-		if i < len(parts2) {
-			_, _ = fmt.Sscanf(parts2[i], "%d", &p2)
-		}
-
-		if p1 < p2 {
-			return -1
-		}
-		if p1 > p2 {
-			return 1
-		}
-	}
-
-	return 0
-}
 
 // verifyKeyMatchesRemote checks if the encryption key can decrypt existing remote files.
 // Returns nil if no files exist or if decryption succeeds.
@@ -2058,7 +2000,7 @@ func showPullPreview(ctx context.Context, syncer *sync.Syncer) error {
 	if len(preview.WouldDownload) > 0 {
 		fmt.Printf("Would download (%d new files):\n", len(preview.WouldDownload))
 		for _, f := range preview.WouldDownload {
-			fmt.Printf("  %s+%s %s (%s)\n", colorGreen, colorReset, f.Path, formatSize(f.RemoteSize))
+			fmt.Printf("  %s+%s %s (%s)\n", colorGreen, colorReset, f.Path, util.FormatSize(f.RemoteSize))
 		}
 		fmt.Println()
 	}
@@ -2069,7 +2011,7 @@ func showPullPreview(ctx context.Context, syncer *sync.Syncer) error {
 		for _, f := range preview.WouldOverwrite {
 			fmt.Printf("  %s~%s %s (local: %s, remote: %s)\n",
 				colorYellow, colorReset, f.Path,
-				formatSize(f.LocalSize), formatSize(f.RemoteSize))
+				util.FormatSize(f.LocalSize), util.FormatSize(f.RemoteSize))
 		}
 		fmt.Println()
 	}
@@ -2126,11 +2068,11 @@ func executePull(ctx context.Context, syncer *sync.Syncer) error {
 					// Final newline after progress
 				} else {
 					progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
-					shortPath := truncatePath(event.Path, 50)
+					shortPath := util.TruncatePath(event.Path, 50)
 					fmt.Printf("\r%s↓%s %s%s%s %s (%s)%s",
 						colorGreen, colorReset,
 						colorDim, progress, colorReset,
-						shortPath, formatSize(event.Size),
+						shortPath, util.FormatSize(event.Size),
 						strings.Repeat(" ", 10))
 				}
 			case "conflict":

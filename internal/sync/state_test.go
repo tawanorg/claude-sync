@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -412,6 +413,134 @@ func TestDetectChangesWithExclude(t *testing.T) {
 	}
 	if len(changes) == 1 && changes[0].Path != "settings.json" {
 		t.Errorf("Expected change for settings.json, got %s", changes[0].Path)
+	}
+}
+
+func TestIsEmpty(t *testing.T) {
+	state := NewState()
+
+	if !state.IsEmpty() {
+		t.Error("new state should be empty")
+	}
+
+	// Add a file — no longer empty
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(tmpFile)
+	state.UpdateFile("test.txt", info, "hash")
+
+	if state.IsEmpty() {
+		t.Error("state with files should not be empty")
+	}
+
+	// Remove file but set LastSync — still not empty
+	state.RemoveFile("test.txt")
+	state.LastSync = time.Now()
+
+	if state.IsEmpty() {
+		t.Error("state with LastSync set should not be empty")
+	}
+}
+
+func TestGetMCPBaseline_Empty(t *testing.T) {
+	state := NewState()
+
+	servers, err := state.GetMCPBaseline()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if servers != nil {
+		t.Error("expected nil servers for empty baseline")
+	}
+}
+
+func TestSetAndGetMCPBaseline(t *testing.T) {
+	state := NewState()
+
+	servers := MCPServers{
+		"test-server": json.RawMessage(`{"command":"node","args":["server.js"]}`),
+	}
+
+	if err := state.SetMCPBaseline(servers); err != nil {
+		t.Fatalf("SetMCPBaseline failed: %v", err)
+	}
+
+	got, err := state.GetMCPBaseline()
+	if err != nil {
+		t.Fatalf("GetMCPBaseline failed: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(got))
+	}
+	if _, ok := got["test-server"]; !ok {
+		t.Error("expected test-server in baseline")
+	}
+}
+
+func TestSetMCPBaseline_Nil(t *testing.T) {
+	state := NewState()
+
+	// Set something first
+	servers := MCPServers{
+		"s": json.RawMessage(`{"command":"node"}`),
+	}
+	if err := state.SetMCPBaseline(servers); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set nil clears it
+	if err := state.SetMCPBaseline(nil); err != nil {
+		t.Fatalf("SetMCPBaseline(nil) failed: %v", err)
+	}
+
+	got, err := state.GetMCPBaseline()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Error("expected nil after setting nil baseline")
+	}
+}
+
+func TestStateSaveAndLoad(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	state := NewState()
+	state.savePath = filepath.Join(tmpDir, "state.json")
+
+	// Add a file
+	tmpFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(tmpFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(tmpFile)
+	state.UpdateFile("test.txt", info, "somehash")
+	state.LastSync = time.Now().Truncate(time.Second)
+
+	if err := state.Save(); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Load it back
+	loaded, err := LoadStateFromDir(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadStateFromDir failed: %v", err)
+	}
+
+	if len(loaded.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(loaded.Files))
+	}
+
+	f := loaded.GetFile("test.txt")
+	if f == nil {
+		t.Fatal("expected test.txt in loaded state")
+	}
+	if f.Hash != "somehash" {
+		t.Errorf("expected hash 'somehash', got %q", f.Hash)
 	}
 }
 

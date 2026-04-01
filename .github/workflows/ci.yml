@@ -20,8 +20,17 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests with coverage
-        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run all tests
+        run: go test -v ./...
+
+      - name: Run coverage on library packages
+        run: |
+          go test -coverprofile=coverage.out -covermode=atomic \
+            ./internal/config/ \
+            ./internal/crypto/ \
+            ./internal/storage/ \
+            ./internal/sync/ \
+            ./internal/util/
 
       - name: Display coverage summary
         run: go tool cover -func=coverage.out | tail -1
@@ -29,8 +38,8 @@ jobs:
       - name: Check coverage threshold
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}' | sed 's/%//')
-          echo "Total coverage: ${COVERAGE}%"
-          THRESHOLD=20
+          echo "Coverage: ${COVERAGE}%"
+          THRESHOLD=60
           if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
             echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1

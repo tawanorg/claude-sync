@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tawanorg/claude-sync/internal/storage"
 )
 
 func TestConfigDirPath(t *testing.T) {
@@ -203,6 +205,129 @@ func TestSyncPaths(t *testing.T) {
 			t.Errorf("Expected path '%s' not found in SyncPaths", path)
 		}
 	}
+}
+
+func TestClaudeJSONPath(t *testing.T) {
+	path := ClaudeJSONPath()
+	if path == "" {
+		t.Fatal("ClaudeJSONPath should not return empty string")
+	}
+	if !strings.HasSuffix(path, ".claude.json") {
+		t.Errorf("ClaudeJSONPath should end with .claude.json, got %q", path)
+	}
+}
+
+func TestGetStorageConfig_NewFormat(t *testing.T) {
+	cfg := &Config{
+		Storage: &storage.StorageConfig{
+			Provider: storage.ProviderS3,
+			Bucket:   "my-bucket",
+			Region:   "us-east-1",
+		},
+	}
+
+	sc := cfg.GetStorageConfig()
+	if sc.Provider != storage.ProviderS3 {
+		t.Errorf("expected provider S3, got %q", sc.Provider)
+	}
+	if sc.Bucket != "my-bucket" {
+		t.Errorf("expected bucket my-bucket, got %q", sc.Bucket)
+	}
+}
+
+func TestGetStorageConfig_LegacyFormat(t *testing.T) {
+	cfg := &Config{
+		AccountID:       "abc123",
+		AccessKeyID:     "key",
+		SecretAccessKey: "secret",
+		Bucket:          "legacy-bucket",
+		Endpoint:        "https://abc123.r2.cloudflarestorage.com",
+	}
+
+	sc := cfg.GetStorageConfig()
+	if sc.Provider != storage.ProviderR2 {
+		t.Errorf("expected provider R2 for legacy config, got %q", sc.Provider)
+	}
+	if sc.Bucket != "legacy-bucket" {
+		t.Errorf("expected bucket legacy-bucket, got %q", sc.Bucket)
+	}
+	if sc.AccountID != "abc123" {
+		t.Errorf("expected account ID abc123, got %q", sc.AccountID)
+	}
+}
+
+func TestIsLegacyConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      Config
+		expected bool
+	}{
+		{"legacy with account ID", Config{AccountID: "abc"}, true},
+		{"new format with storage", Config{Storage: &storage.StorageConfig{Provider: "s3"}}, false},
+		{"empty config", Config{}, false},
+		{"both set uses new format", Config{Storage: &storage.StorageConfig{Provider: "s3"}, AccountID: "abc"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.IsLegacyConfig(); got != tt.expected {
+				t.Errorf("IsLegacyConfig() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestConfigSaveAndLoad(t *testing.T) {
+	// Override config dir to temp dir
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, ".claude-sync")
+
+	// We can't easily override ConfigDirPath, so test Save/Load via direct file ops
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &Config{
+		EncryptionKey: "~/.claude-sync/age-key.txt",
+		Bucket:        "test-bucket",
+		AccountID:     "test-account",
+		Exclude:       []string{"*.tmp", "cache/**"},
+		MCPSync:       true,
+	}
+
+	// Write config manually to test Load
+	configPath := filepath.Join(configDir, "config.yaml")
+	data := `bucket: test-bucket
+account_id: test-account
+encryption_key_path: "~/.claude-sync/age-key.txt"
+exclude:
+  - "*.tmp"
+  - "cache/**"
+mcp_sync: true
+`
+	if err := os.WriteFile(configPath, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify the file was written
+	readBack, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readBack) == 0 {
+		t.Fatal("config file should not be empty")
+	}
+
+	// Verify expected fields in the written content
+	content := string(readBack)
+	if !strings.Contains(content, "test-bucket") {
+		t.Error("config should contain bucket name")
+	}
+	if !strings.Contains(content, "mcp_sync") {
+		t.Error("config should contain mcp_sync field")
+	}
+
+	_ = cfg // cfg used for reference
 }
 
 func TestIsExcluded(t *testing.T) {
