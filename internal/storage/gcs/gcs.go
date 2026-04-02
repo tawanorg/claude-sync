@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"golang.org/x/sync/errgroup"
@@ -26,7 +27,8 @@ type Client struct {
 
 // New creates a new GCS storage client
 func New(cfg *appstorage.StorageConfig) (appstorage.Storage, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	var opts []option.ClientOption
 
@@ -174,7 +176,10 @@ func (c *Client) Head(ctx context.Context, key string) (*appstorage.ObjectInfo, 
 func (c *Client) BucketExists(ctx context.Context) (bool, error) {
 	_, err := c.client.Bucket(c.bucket).Attrs(ctx)
 	if err != nil {
-		return false, nil
+		if err == storage.ErrBucketNotExist {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check bucket: %w", err)
 	}
 	return true, nil
 }

@@ -3,8 +3,10 @@ package r2
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -32,7 +34,9 @@ func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 		return nil, fmt.Errorf("R2 endpoint could not be determined")
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(context.Background(),
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	awsCfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.AccessKeyID,
 			cfg.SecretAccessKey,
@@ -202,7 +206,11 @@ func (c *Client) BucketExists(ctx context.Context) (bool, error) {
 		Bucket: aws.String(c.bucket),
 	})
 	if err != nil {
-		return false, nil
+		var nf *types.NotFound
+		if errors.As(err, &nf) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check bucket: %w", err)
 	}
 	return true, nil
 }
