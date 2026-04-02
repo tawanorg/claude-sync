@@ -493,3 +493,35 @@ func TestGzipDecompress_AcceptsNormalData(t *testing.T) {
 		t.Errorf("Mismatch: got %q, want %q", result, original)
 	}
 }
+
+func TestPullDownloadsWithRestrictivePermissions(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+
+	// Upload encrypted content to mock storage
+	content := []byte("# Sensitive Settings")
+	encrypted, err := env.syncer.encryptor.Encrypt(content)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+	if err := env.store.Upload(ctx, "settings.json.age", encrypted); err != nil {
+		t.Fatalf("Upload to mock failed: %v", err)
+	}
+
+	// Pull
+	_, err = env.syncer.Pull(ctx)
+	if err != nil {
+		t.Fatalf("Pull failed: %v", err)
+	}
+
+	// Check file permissions
+	filePath := filepath.Join(env.claudeDir, "settings.json")
+	info, err := os.Stat(filePath)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+	perm := info.Mode().Perm()
+	if perm != 0600 {
+		t.Errorf("Expected file permission 0600, got %04o", perm)
+	}
+}
