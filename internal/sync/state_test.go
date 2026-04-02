@@ -581,3 +581,32 @@ func TestGetLocalFilesSkipsSymlinksInDirectories(t *testing.T) {
 		t.Error("Symlink in subdir should be skipped during directory walk")
 	}
 }
+
+func TestGetLocalFiles_SkipsTopLevelSymlinks(t *testing.T) {
+	tmpDir := t.TempDir()
+	claudeDir := filepath.Join(tmpDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0700); err != nil {
+		t.Fatalf("Failed to create claude dir: %v", err)
+	}
+
+	// Create a real file
+	realFile := filepath.Join(tmpDir, "real-secret.txt")
+	if err := os.WriteFile(realFile, []byte("secret"), 0600); err != nil {
+		t.Fatalf("Failed to create real file: %v", err)
+	}
+
+	// Create a symlink in claudeDir pointing to the real file
+	symlinkPath := filepath.Join(claudeDir, "CLAUDE.md")
+	if err := os.Symlink(realFile, symlinkPath); err != nil {
+		t.Fatalf("Failed to create symlink: %v", err)
+	}
+
+	files, err := GetLocalFiles(claudeDir, []string{"CLAUDE.md"})
+	if err != nil {
+		t.Fatalf("GetLocalFiles failed: %v", err)
+	}
+
+	if _, exists := files["CLAUDE.md"]; exists {
+		t.Error("Expected symlink CLAUDE.md to be skipped, but it was included")
+	}
+}

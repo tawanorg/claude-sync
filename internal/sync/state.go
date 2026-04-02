@@ -198,7 +198,7 @@ func GetLocalFiles(claudeDir string, syncPaths []string, excludeFn ...func(strin
 	for _, syncPath := range syncPaths {
 		fullPath := filepath.Join(claudeDir, syncPath)
 
-		info, err := os.Stat(fullPath)
+		info, err := os.Lstat(fullPath)
 		if os.IsNotExist(err) {
 			continue
 		}
