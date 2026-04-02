@@ -494,6 +494,37 @@ func TestGzipDecompress_AcceptsNormalData(t *testing.T) {
 	}
 }
 
+func TestUpdateFileAndMarkUploaded_IsAtomic(t *testing.T) {
+	state := NewState()
+	tmpDir := t.TempDir()
+
+	// Create a test file to get FileInfo
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("content"), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("Failed to stat test file: %v", err)
+	}
+
+	state.UpdateFileAndMarkUploaded("test.txt", info, "abc123")
+
+	f := state.GetFile("test.txt")
+	if f == nil {
+		t.Fatal("Expected file state to exist")
+	}
+	if f.Hash != "abc123" {
+		t.Errorf("Expected hash 'abc123', got %q", f.Hash)
+	}
+	if f.Uploaded.IsZero() {
+		t.Error("Expected Uploaded to be set")
+	}
+	if f.Size != info.Size() {
+		t.Errorf("Expected size %d, got %d", info.Size(), f.Size)
+	}
+}
+
 func TestPullDownloadsWithRestrictivePermissions(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()

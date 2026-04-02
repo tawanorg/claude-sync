@@ -412,8 +412,7 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 	// Update state
 	info, _ := os.Stat(fullPath)
 	hash, _ := HashFile(fullPath)
-	s.state.UpdateFile(relativePath, info, hash)
-	s.state.MarkUploaded(relativePath)
+	s.state.UpdateFileAndMarkUploaded(relativePath, info, hash)
 
 	return nil
 }
@@ -457,8 +456,7 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	// Update state
 	info, _ := os.Stat(fullPath)
 	hash, _ := HashFile(fullPath)
-	s.state.UpdateFile(relativePath, info, hash)
-	s.state.MarkUploaded(relativePath)
+	s.state.UpdateFileAndMarkUploaded(relativePath, info, hash)
 
 	return nil
 }

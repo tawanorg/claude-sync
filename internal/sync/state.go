@@ -124,6 +124,21 @@ func (s *SyncState) MarkUploaded(relativePath string) {
 	}
 }
 
+// UpdateFileAndMarkUploaded atomically updates file state and marks it as uploaded.
+// This prevents a race where another goroutine observes a torn state between
+// UpdateFile and MarkUploaded.
+func (s *SyncState) UpdateFileAndMarkUploaded(relativePath string, info os.FileInfo, hash string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Files[relativePath] = &FileState{
+		Path:     relativePath,
+		Hash:     hash,
+		Size:     info.Size(),
+		ModTime:  info.ModTime(),
+		Uploaded: time.Now(),
+	}
+}
+
 func (s *SyncState) GetFile(relativePath string) *FileState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
