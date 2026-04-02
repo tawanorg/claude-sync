@@ -3,6 +3,7 @@ package sync
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tawanorg/claude-sync/internal/config"
@@ -311,5 +312,49 @@ func TestSyncPathsConfig(t *testing.T) {
 		if !found {
 			t.Errorf("Expected '%s' in SyncPaths", expected)
 		}
+	}
+}
+
+func TestValidatePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	claudeDir := filepath.Join(tmpDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0700); err != nil {
+		t.Fatalf("Failed to create claude dir: %v", err)
+	}
+
+	syncer := &Syncer{claudeDir: claudeDir}
+
+	tests := []struct {
+		name        string
+		relPath     string
+		wantErr     bool
+		errContains string
+	}{
+		{"normal file", "CLAUDE.md", false, ""},
+		{"nested file", "agents/helper.json", false, ""},
+		{"traversal up", "../etc/passwd", true, "path traversal"},
+		{"traversal deep", "../../.ssh/authorized_keys", true, "path traversal"},
+		{"traversal hidden", "agents/../../.bashrc", true, "path traversal"},
+		{"dot path normalized", "./CLAUDE.md", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fullPath, err := syncer.validatePath(tt.relPath)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error containing %q, got nil", tt.errContains)
+				} else if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("Expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if !strings.HasPrefix(fullPath, claudeDir) {
+					t.Errorf("Expected path under %s, got %s", claudeDir, fullPath)
+				}
+			}
+		})
 	}
 }

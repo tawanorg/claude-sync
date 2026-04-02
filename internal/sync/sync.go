@@ -367,8 +367,23 @@ func (s *Syncer) Status(ctx context.Context) ([]FileChange, error) {
 	return s.state.DetectChanges(s.claudeDir, config.SyncPaths, s.isExcluded)
 }
 
-func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
+// validatePath ensures the resolved path stays within claudeDir.
+func (s *Syncer) validatePath(relativePath string) (string, error) {
 	fullPath := filepath.Join(s.claudeDir, relativePath)
+	cleanBase := filepath.Clean(s.claudeDir) + string(os.PathSeparator)
+	cleanFull := filepath.Clean(fullPath)
+	if cleanFull != filepath.Clean(s.claudeDir) &&
+		!strings.HasPrefix(cleanFull+string(os.PathSeparator), cleanBase) {
+		return "", fmt.Errorf("path traversal rejected: %s escapes sync directory", relativePath)
+	}
+	return fullPath, nil
+}
+
+func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
+	fullPath, err := s.validatePath(relativePath)
+	if err != nil {
+		return err
+	}
 
 	// Read file
 	data, err := os.ReadFile(fullPath)
@@ -425,7 +440,10 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	}
 
 	// Ensure directory exists
-	fullPath := filepath.Join(s.claudeDir, relativePath)
+	fullPath, err := s.validatePath(relativePath)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)

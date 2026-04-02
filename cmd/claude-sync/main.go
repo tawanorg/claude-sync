@@ -1405,6 +1405,13 @@ func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string, sta
 }
 
 func showDiff(localPath, conflictPath string) {
+	// Validate paths exist before passing to diff
+	for _, p := range []string{localPath, conflictPath} {
+		if _, err := os.Stat(p); err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot access %s: %v\n", p, err)
+			return
+		}
+	}
 	// Try to use diff command
 	cmd := exec.Command("diff", "-u", "--color=always", localPath, conflictPath)
 	cmd.Stdout = os.Stdout
