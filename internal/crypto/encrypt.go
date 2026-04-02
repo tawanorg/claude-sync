@@ -98,6 +98,11 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 	// Derive 32 bytes using Argon2id (memory-hard, resistant to GPU attacks)
 	// Parameters: 64MB memory, 3 iterations, 4 threads
 	key := argon2.IDKey([]byte(passphrase), salt[:], 3, 64*1024, 4, 32)
+	defer func() {
+		for i := range key {
+			key[i] = 0
+		}
+	}()
 
 	// Clamp the scalar for X25519 (per RFC 7748)
 	key[0] &= 248
@@ -106,6 +111,11 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 
 	// Compute the public key
 	var privateKey, publicKey [32]byte
+	defer func() {
+		for i := range privateKey {
+			privateKey[i] = 0
+		}
+	}()
 	copy(privateKey[:], key)
 	curve25519.ScalarBaseMult(&publicKey, &privateKey)
 

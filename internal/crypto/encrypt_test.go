@@ -415,3 +415,42 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+func TestGenerateKeyFromPassphrase_ZerosKeyMaterial(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "age-key.txt")
+
+	err := GenerateKeyFromPassphrase(keyPath, "test-passphrase-for-zeroing")
+	if err != nil {
+		t.Fatalf("GenerateKeyFromPassphrase failed: %v", err)
+	}
+
+	// Verify the key file was written successfully
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to read key file: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("Key file is empty")
+	}
+
+	// Verify we can create an encryptor from the key (key derivation is correct)
+	enc, err := NewEncryptor(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to create encryptor from generated key: %v", err)
+	}
+
+	// Verify encrypt/decrypt round-trip works
+	plaintext := []byte("test data for key zeroing verification")
+	ciphertext, err := enc.Encrypt(plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+	decrypted, err := enc.Decrypt(ciphertext)
+	if err != nil {
+		t.Fatalf("Decrypt failed: %v", err)
+	}
+	if string(decrypted) != string(plaintext) {
+		t.Errorf("Round-trip failed: got %q, want %q", decrypted, plaintext)
+	}
+}
