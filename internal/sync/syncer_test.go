@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -457,5 +458,38 @@ func TestIsGzipped(t *testing.T) {
 	}
 	if !isGzipped([]byte{0x1f, 0x8b, 0x08}) {
 		t.Error("gzip magic bytes should be detected as gzipped")
+	}
+}
+
+func TestGzipDecompress_RejectsOversizedData(t *testing.T) {
+	// Create data that's all zeros (compresses very well) — 101 MB exceeds 100 MB limit
+	bigData := make([]byte, 101*1024*1024)
+	compressed, err := gzipCompress(bigData)
+	if err != nil {
+		t.Fatalf("Failed to compress test data: %v", err)
+	}
+
+	_, err = gzipDecompress(compressed)
+	if err == nil {
+		t.Fatal("Expected error for oversized decompressed data, got nil")
+	}
+	if !strings.Contains(err.Error(), "maximum size") {
+		t.Errorf("Expected 'maximum size' error, got: %v", err)
+	}
+}
+
+func TestGzipDecompress_AcceptsNormalData(t *testing.T) {
+	original := []byte("Normal sized data for testing")
+	compressed, err := gzipCompress(original)
+	if err != nil {
+		t.Fatalf("Failed to compress: %v", err)
+	}
+
+	result, err := gzipDecompress(compressed)
+	if err != nil {
+		t.Fatalf("Decompress failed: %v", err)
+	}
+	if string(result) != string(original) {
+		t.Errorf("Mismatch: got %q, want %q", result, original)
 	}
 }

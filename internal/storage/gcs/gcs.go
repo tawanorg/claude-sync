@@ -80,9 +80,14 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 	}
 	defer rc.Close()
 
-	data, err := io.ReadAll(rc)
+	const maxDownloadSize = 200 * 1024 * 1024 // 200 MB
+	limited := io.LimitReader(rc, maxDownloadSize+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", key, err)
+	}
+	if int64(len(data)) > maxDownloadSize {
+		return nil, fmt.Errorf("download of %s exceeds maximum size (%d MB)", key, maxDownloadSize/(1024*1024))
 	}
 
 	return data, nil

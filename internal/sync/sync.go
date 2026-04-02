@@ -937,6 +937,8 @@ func isGzipped(data []byte) bool {
 	return len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b
 }
 
+const maxDecompressedSize = 100 * 1024 * 1024 // 100 MB
+
 func gzipCompress(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	w, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
@@ -958,5 +960,13 @@ func gzipDecompress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	return io.ReadAll(r)
+	limited := io.LimitReader(r, maxDecompressedSize+1)
+	out, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(out)) > maxDecompressedSize {
+		return nil, fmt.Errorf("decompressed data exceeds maximum size (%d MB)", maxDecompressedSize/(1024*1024))
+	}
+	return out, nil
 }
