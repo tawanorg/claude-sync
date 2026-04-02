@@ -36,7 +36,7 @@ func TestBasicCrossDeviceSync(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	passphrase := getTestPassphrase()
+	passphrase := getTestPassphrase(t)
 
 	// Setup two isolated test environments
 	deviceADir := t.TempDir()
@@ -199,7 +199,7 @@ func TestPullWithExistingFiles(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	passphrase := getTestPassphrase()
+	passphrase := getTestPassphrase(t)
 
 	deviceADir := t.TempDir()
 	deviceCDir := t.TempDir()
@@ -343,7 +343,7 @@ func TestConflictResolution(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	passphrase := getTestPassphrase()
+	passphrase := getTestPassphrase(t)
 
 	deviceADir := t.TempDir()
 	deviceBDir := t.TempDir()
@@ -457,11 +457,13 @@ func TestConflictResolution(t *testing.T) {
 
 // Helper functions
 
-func getTestPassphrase() string {
-	if p := os.Getenv("CLAUDE_SYNC_TEST_PASSPHRASE"); p != "" {
-		return p
+func getTestPassphrase(t *testing.T) string {
+	t.Helper()
+	p := os.Getenv("CLAUDE_SYNC_TEST_PASSPHRASE")
+	if p == "" {
+		t.Skip("CLAUDE_SYNC_TEST_PASSPHRASE not set")
 	}
-	return "test-passphrase-123"
+	return p
 }
 
 func getTestStorageConfig() *storage.StorageConfig {
