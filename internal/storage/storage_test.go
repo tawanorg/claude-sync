@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -63,6 +64,60 @@ func (m *MockStorage) BucketExists(ctx context.Context) (bool, error) {
 		return m.BucketExistsFunc(ctx)
 	}
 	return true, nil
+}
+
+func TestMockStorage_BucketExists_NotFound(t *testing.T) {
+	ctx := context.Background()
+	mock := &MockStorage{
+		BucketExistsFunc: func(ctx context.Context) (bool, error) {
+			return false, nil
+		},
+	}
+
+	exists, err := mock.BucketExists(ctx)
+	if err != nil {
+		t.Errorf("BucketExists() error = %v, want nil", err)
+	}
+	if exists {
+		t.Errorf("BucketExists() = true, want false")
+	}
+}
+
+func TestMockStorage_BucketExists_Error(t *testing.T) {
+	ctx := context.Background()
+	mock := &MockStorage{
+		BucketExistsFunc: func(ctx context.Context) (bool, error) {
+			return false, fmt.Errorf("failed to check bucket: access denied")
+		},
+	}
+
+	exists, err := mock.BucketExists(ctx)
+	if err == nil {
+		t.Errorf("BucketExists() error = nil, want error")
+	}
+	if exists {
+		t.Errorf("BucketExists() = true, want false")
+	}
+	if !contains(err.Error(), "access denied") {
+		t.Errorf("BucketExists() error = %v, want error containing 'access denied'", err)
+	}
+}
+
+func TestMockStorage_BucketExists_Success(t *testing.T) {
+	ctx := context.Background()
+	mock := &MockStorage{
+		BucketExistsFunc: func(ctx context.Context) (bool, error) {
+			return true, nil
+		},
+	}
+
+	exists, err := mock.BucketExists(ctx)
+	if err != nil {
+		t.Errorf("BucketExists() error = %v, want nil", err)
+	}
+	if !exists {
+		t.Errorf("BucketExists() = false, want true")
+	}
 }
 
 func TestNew_InvalidConfig(t *testing.T) {
