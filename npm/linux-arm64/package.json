@@ -1,0 +1,15 @@
+{
+  "name": "@tawandotorg/claude-sync-linux-arm64",
+  "version": "0.4.0",
+  "description": "claude-sync binary for Linux ARM64",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "bin": {
+    "claude-sync": "claude-sync"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tawanorg/claude-sync.git"
+  }
+}

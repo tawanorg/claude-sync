@@ -5,9 +5,6 @@
   "bin": {
     "claude-sync": "./bin/claude-sync.js"
   },
-  "scripts": {
-    "postinstall": "node install.js"
-  },
   "keywords": [
     "claude",
     "claude-code",
@@ -33,13 +30,12 @@
   "engines": {
     "node": ">=14"
   },
-  "os": [
-    "darwin",
-    "linux",
-    "win32"
-  ],
-  "cpu": [
-    "x64",
-    "arm64"
-  ]
+  "optionalDependencies": {
+    "@tawandotorg/claude-sync-darwin-arm64": "0.4.0",
+    "@tawandotorg/claude-sync-darwin-x64": "0.4.0",
+    "@tawandotorg/claude-sync-linux-arm64": "0.4.0",
+    "@tawandotorg/claude-sync-linux-x64": "0.4.0",
+    "@tawandotorg/claude-sync-win32-arm64": "0.4.0",
+    "@tawandotorg/claude-sync-win32-x64": "0.4.0"
+  }
 }

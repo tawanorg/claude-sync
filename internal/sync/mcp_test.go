@@ -259,9 +259,9 @@ func TestMergeMCPServers_KeepLocalChanged(t *testing.T) {
 	serverV1 := json.RawMessage(`{"command":"node","args":["v1"]}`)
 	serverV2 := json.RawMessage(`{"command":"node","args":["v2"]}`)
 
-	local := MCPServers{"s": serverV2}     // local changed
-	remote := MCPServers{"s": serverV1}    // remote unchanged
-	baseline := MCPServers{"s": serverV1}  // matches remote
+	local := MCPServers{"s": serverV2}    // local changed
+	remote := MCPServers{"s": serverV1}   // remote unchanged
+	baseline := MCPServers{"s": serverV1} // matches remote
 
 	result := MergeMCPServers(local, remote, baseline)
 

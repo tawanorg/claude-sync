@@ -1,0 +1,15 @@
+{
+  "name": "@tawandotorg/claude-sync-win32-arm64",
+  "version": "0.4.0",
+  "description": "claude-sync binary for Windows ARM64",
+  "os": ["win32"],
+  "cpu": ["arm64"],
+  "bin": {
+    "claude-sync": "claude-sync.exe"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tawanorg/claude-sync.git"
+  }
+}
