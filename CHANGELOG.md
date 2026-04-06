@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/tawanorg/claude-sync/compare/v1.8.0...v1.8.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* fail init when storage bucket does not exist ([11ad555](https://github.com/tawanorg/claude-sync/commit/11ad555dc2fd0a50e1224702b8612d9a5cfd583d)), closes [#21](https://github.com/tawanorg/claude-sync/issues/21)
+
 # [1.8.0](https://github.com/tawanorg/claude-sync/compare/v1.7.0...v1.8.0) (2026-04-01)
 
 
