@@ -2,6 +2,7 @@ package gcs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -169,7 +170,10 @@ func (c *Client) Head(ctx context.Context, key string) (*appstorage.ObjectInfo, 
 func (c *Client) BucketExists(ctx context.Context) (bool, error) {
 	_, err := c.client.Bucket(c.bucket).Attrs(ctx)
 	if err != nil {
-		return false, nil
+		if errors.Is(err, storage.ErrBucketNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check bucket: %w", err)
 	}
 	return true, nil
 }

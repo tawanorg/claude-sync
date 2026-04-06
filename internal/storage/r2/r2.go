@@ -3,6 +3,7 @@ package r2
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -197,7 +198,12 @@ func (c *Client) BucketExists(ctx context.Context) (bool, error) {
 		Bucket: aws.String(c.bucket),
 	})
 	if err != nil {
-		return false, nil
+		var notFound *types.NotFound
+		var noSuchBucket *types.NoSuchBucket
+		if errors.As(err, &notFound) || errors.As(err, &noSuchBucket) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check bucket: %w", err)
 	}
 	return true, nil
 }

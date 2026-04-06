@@ -358,12 +358,11 @@ skipKeyGen:
 
 	exists, err := store.BucketExists(ctx)
 	if err != nil {
-		printWarning("Could not verify bucket: " + err.Error())
-	} else if exists {
-		printSuccess("Connected to '" + storageCfg.Bucket + "'")
-	} else {
-		printWarning("Bucket '" + storageCfg.Bucket + "' not found")
+		return fmt.Errorf("could not verify bucket '%s': %w", storageCfg.Bucket, err)
+	} else if !exists {
+		return fmt.Errorf("bucket '%s' does not exist. Please create it first in your storage provider's console.\n  For R2: https://dash.cloudflare.com/ → R2 → Create bucket\n  For S3: https://console.aws.amazon.com/s3/ → Create bucket (use 'automatic' location)\n  For GCS: https://console.cloud.google.com/storage/ → Create bucket", storageCfg.Bucket)
 	}
+	printSuccess("Connected to '" + storageCfg.Bucket + "'")
 
 	// Clear remote if user chose to start fresh
 	if shouldClearRemote {
