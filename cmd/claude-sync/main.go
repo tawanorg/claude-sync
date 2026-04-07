@@ -1140,7 +1140,6 @@ func diffCmd() *cobra.Command {
 	}
 }
 
-
 type conflictFile struct {
 	ConflictPath string
 	OriginalPath string
@@ -1674,7 +1673,6 @@ func getLatestRelease() (*GitHubRelease, error) {
 	return &release, nil
 }
 
-
 func downloadBinary(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
@@ -1716,8 +1714,6 @@ func replaceBinary(execPath string, newBinary []byte) error {
 
 	return nil
 }
-
-
 
 // verifyKeyMatchesRemote checks if the encryption key can decrypt existing remote files.
 // Returns nil if no files exist or if decryption succeeds.

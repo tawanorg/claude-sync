@@ -9,6 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@tawandotorg/claude-sync)](https://www.npmjs.com/package/@tawandotorg/claude-sync)
+[![Socket Badge](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.8.0)](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.8.0)
 
 [Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Auto-Sync](#auto-sync-hooks) • [Security](#security)
 

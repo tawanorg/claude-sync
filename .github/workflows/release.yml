@@ -42,23 +42,34 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release
 
-      - name: Publish to npm
+      - name: Build platform binaries
+        if: success()
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$VERSION" ]; then
+            LDFLAGS="-s -w -X main.version=${VERSION}"
+            GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o bin/claude-sync-darwin-arm64 ./cmd/claude-sync
+            GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/claude-sync-darwin-amd64 ./cmd/claude-sync
+            GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o bin/claude-sync-linux-arm64 ./cmd/claude-sync
+            GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/claude-sync-linux-amd64 ./cmd/claude-sync
+            GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/claude-sync-windows-amd64.exe ./cmd/claude-sync
+            GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o bin/claude-sync-windows-arm64.exe ./cmd/claude-sync
+          fi
+
+      - name: Publish platform packages to npm
         if: success()
         continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Get the latest version from git tag
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -n "$VERSION" ]; then
-            # Check if version already published
             PUBLISHED=$(npm view @tawandotorg/claude-sync version 2>/dev/null || echo "")
             if [ "${VERSION#v}" = "$PUBLISHED" ]; then
               echo "Version ${VERSION#v} already published to npm, skipping"
               exit 0
             fi
-            npm version ${VERSION#v} --no-git-tag-version --allow-same-version
-            npm publish --access public
+            bash scripts/publish-npm.sh "$VERSION"
           fi
 
       - name: Publish to GitHub Packages

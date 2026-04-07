@@ -4,18 +4,48 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-function getBinaryPath() {
-  const platform = process.platform;
-  const binaryName = platform === "win32" ? "claude-sync.exe" : "claude-sync";
-  const binaryPath = path.join(__dirname, binaryName);
+const PLATFORM_PACKAGES = {
+  "darwin-arm64": "@tawandotorg/claude-sync-darwin-arm64",
+  "darwin-x64": "@tawandotorg/claude-sync-darwin-x64",
+  "linux-arm64": "@tawandotorg/claude-sync-linux-arm64",
+  "linux-x64": "@tawandotorg/claude-sync-linux-x64",
+  "win32-arm64": "@tawandotorg/claude-sync-win32-arm64",
+  "win32-x64": "@tawandotorg/claude-sync-win32-x64",
+};
 
-  if (!fs.existsSync(binaryPath)) {
-    console.error("Error: claude-sync binary not found.");
-    console.error("Try reinstalling: npm install -g claude-sync");
+function getBinaryPath() {
+  const platformKey = `${process.platform}-${process.arch}`;
+  const packageName = PLATFORM_PACKAGES[platformKey];
+
+  if (!packageName) {
+    console.error(`Error: Unsupported platform ${platformKey}`);
+    console.error("Supported: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-arm64, win32-x64");
     process.exit(1);
   }
 
-  return binaryPath;
+  const binaryName = process.platform === "win32" ? "claude-sync.exe" : "claude-sync";
+
+  // Try to find the binary from the platform-specific package
+  try {
+    const packageDir = path.dirname(require.resolve(`${packageName}/package.json`));
+    const binaryPath = path.join(packageDir, binaryName);
+    if (fs.existsSync(binaryPath)) {
+      return binaryPath;
+    }
+  } catch (e) {
+    // Package not installed
+  }
+
+  // Fallback: check local bin directory (for development)
+  const localPath = path.join(__dirname, binaryName);
+  if (fs.existsSync(localPath)) {
+    return localPath;
+  }
+
+  console.error(`Error: claude-sync binary not found for ${platformKey}.`);
+  console.error(`The platform package ${packageName} may not be installed.`);
+  console.error("Try reinstalling: npm install -g @tawandotorg/claude-sync");
+  process.exit(1);
 }
 
 const binary = getBinaryPath();

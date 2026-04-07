@@ -2,6 +2,10 @@
 bin/claude-sync
 bin/claude-sync.exe
 bin/claude-sync-*
+
+# Platform package binaries (added during publish, not committed)
+npm/*/claude-sync
+npm/*/claude-sync.exe
 *.exe
 *.exe~
 *.dll
