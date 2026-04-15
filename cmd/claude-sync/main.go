@@ -1940,7 +1940,7 @@ func createBackup() (string, error) {
 	backupDir := claudeDir + ".backup." + timestamp
 
 	// Create backup directory
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
+	if err := os.MkdirAll(backupDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
@@ -1956,7 +1956,7 @@ func createBackup() (string, error) {
 
 		// Ensure destination directory exists
 		dstDir := filepath.Dir(dstPath)
-		if err := os.MkdirAll(dstDir, 0755); err != nil {
+		if err := os.MkdirAll(dstDir, 0700); err != nil {
 			return "", fmt.Errorf("failed to create directory %s: %w", dstDir, err)
 		}
 
@@ -1966,7 +1966,7 @@ func createBackup() (string, error) {
 			return "", fmt.Errorf("failed to read %s: %w", relPath, err)
 		}
 
-		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+		if err := os.WriteFile(dstPath, data, 0600); err != nil {
 			return "", fmt.Errorf("failed to write %s: %w", relPath, err)
 		}
 	}

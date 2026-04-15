@@ -601,3 +601,48 @@ func TestPullEmptyRemoteIsNoop(t *testing.T) {
 		t.Errorf("Expected 0 downloads, got %d", len(result.Downloaded))
 	}
 }
+
+// TestPullSetsRestrictivePermissions verifies that files created by a pull are
+// 0600 and directories created by a pull are 0700. ~/.claude can contain API
+// keys, prompts, and personal context, so it must not be world-readable.
+//
+// Uses a nested remote path (agents/helper.json) so the pull actually has to
+// create the parent directory — os.MkdirAll does not modify the mode of
+// pre-existing directories, and env.claudeDir was created at 0755 by setup.
+func TestPullSetsRestrictivePermissions(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+
+	content := []byte(`{"name":"helper","model":"opus"}`)
+	encrypted, err := env.syncer.encryptor.Encrypt(content)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+	if err := env.store.Upload(ctx, "agents/helper.json.age", encrypted); err != nil {
+		t.Fatalf("Upload to mock failed: %v", err)
+	}
+
+	if _, err := env.syncer.Pull(ctx); err != nil {
+		t.Fatalf("Pull failed: %v", err)
+	}
+
+	// File created by pull must be user-only readable/writable.
+	filePath := filepath.Join(env.claudeDir, "agents/helper.json")
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		t.Fatalf("Stat file failed: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0600 {
+		t.Errorf("Expected file mode 0600, got %o", got)
+	}
+
+	// Directory created by pull must be user-only.
+	dirPath := filepath.Join(env.claudeDir, "agents")
+	di, err := os.Stat(dirPath)
+	if err != nil {
+		t.Fatalf("Stat dir failed: %v", err)
+	}
+	if got := di.Mode().Perm(); got != 0700 {
+		t.Errorf("Expected dir mode 0700, got %o", got)
+	}
+}

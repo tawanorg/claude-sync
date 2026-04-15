@@ -427,12 +427,12 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	// Ensure directory exists
 	fullPath := filepath.Join(s.claudeDir, relativePath)
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Write file
-	if err := os.WriteFile(fullPath, data, 0644); err != nil {
+	if err := os.WriteFile(fullPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
