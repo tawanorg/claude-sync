@@ -23,11 +23,17 @@ type StorageConfig struct {
 	CredentialsFile       string `yaml:"credentials_file,omitempty"`
 	CredentialsJSON       string `yaml:"credentials_json,omitempty"`
 	UseDefaultCredentials bool   `yaml:"use_default_credentials,omitempty"`
+
+	// WebDAV-specific (Nextcloud, ownCloud, etc.)
+	WebDAVURL      string `yaml:"webdav_url,omitempty"`
+	WebDAVUsername string `yaml:"webdav_username,omitempty"`
+	WebDAVPassword string `yaml:"webdav_password,omitempty"`
+	PathPrefix     string `yaml:"path_prefix,omitempty"`
 }
 
 // Validate checks if the configuration is valid for the selected provider
 func (c *StorageConfig) Validate() error {
-	if c.Bucket == "" {
+	if c.Provider != ProviderWebDAV && c.Bucket == "" {
 		return fmt.Errorf("bucket is required")
 	}
 
@@ -38,6 +44,8 @@ func (c *StorageConfig) Validate() error {
 		return c.validateS3()
 	case ProviderGCS:
 		return c.validateGCS()
+	case ProviderWebDAV:
+		return c.validateWebDAV()
 	case "":
 		return fmt.Errorf("provider is required")
 	default:
@@ -77,6 +85,19 @@ func (c *StorageConfig) validateGCS() error {
 	}
 	// GCS can use default credentials, credentials file, or JSON
 	// At least one auth method should be available (or use_default_credentials)
+	return nil
+}
+
+func (c *StorageConfig) validateWebDAV() error {
+	if c.WebDAVURL == "" {
+		return fmt.Errorf("webdav_url is required for WebDAV")
+	}
+	if c.WebDAVUsername == "" {
+		return fmt.Errorf("webdav_username is required for WebDAV")
+	}
+	if c.WebDAVPassword == "" {
+		return fmt.Errorf("webdav_password is required for WebDAV")
+	}
 	return nil
 }
 
