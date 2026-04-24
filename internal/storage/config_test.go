@@ -153,6 +153,58 @@ func TestStorageConfig_Validate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "project_id is required",
 		},
+		// WebDAV tests
+		{
+			name: "valid WebDAV config",
+			config: StorageConfig{
+				Provider:       ProviderWebDAV,
+				WebDAVURL:      "https://cloud.example.com/remote.php/dav/files/user/",
+				WebDAVUsername:  "user",
+				WebDAVPassword: "app-password",
+				PathPrefix:     "claude-sync",
+			},
+			wantErr: false,
+		},
+		{
+			name: "WebDAV missing URL",
+			config: StorageConfig{
+				Provider:       ProviderWebDAV,
+				WebDAVUsername:  "user",
+				WebDAVPassword: "app-password",
+			},
+			wantErr: true,
+			errMsg:  "webdav_url is required",
+		},
+		{
+			name: "WebDAV missing username",
+			config: StorageConfig{
+				Provider:       ProviderWebDAV,
+				WebDAVURL:      "https://cloud.example.com/remote.php/dav/files/user/",
+				WebDAVPassword: "app-password",
+			},
+			wantErr: true,
+			errMsg:  "webdav_username is required",
+		},
+		{
+			name: "WebDAV missing password",
+			config: StorageConfig{
+				Provider:      ProviderWebDAV,
+				WebDAVURL:     "https://cloud.example.com/remote.php/dav/files/user/",
+				WebDAVUsername: "user",
+			},
+			wantErr: true,
+			errMsg:  "webdav_password is required",
+		},
+		{
+			name: "WebDAV does not require bucket",
+			config: StorageConfig{
+				Provider:       ProviderWebDAV,
+				WebDAVURL:      "https://cloud.example.com/remote.php/dav/files/user/",
+				WebDAVUsername:  "user",
+				WebDAVPassword: "app-password",
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

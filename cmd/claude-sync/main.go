@@ -28,6 +28,7 @@ import (
 	_ "github.com/tawanorg/claude-sync/internal/storage/gcs"
 	_ "github.com/tawanorg/claude-sync/internal/storage/r2"
 	_ "github.com/tawanorg/claude-sync/internal/storage/s3"
+	_ "github.com/tawanorg/claude-sync/internal/storage/webdav"
 )
 
 var (
@@ -122,15 +123,19 @@ func initCmd() *cobra.Command {
 	// GCS flags
 	var gcsProjectID, gcsCredentialsFile string
 
+	// WebDAV flags
+	var webdavURL, webdavUsername, webdavPassword, webdavPathPrefix string
+
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize claude-sync configuration",
 		Long: `Set up cloud storage credentials and generate encryption keys.
 
 Supported providers:
-  - r2:  Cloudflare R2 (S3-compatible, free tier: 10GB)
-  - s3:  Amazon S3
-  - gcs: Google Cloud Storage
+  - r2:     Cloudflare R2 (S3-compatible, free tier: 10GB)
+  - s3:     Amazon S3
+  - gcs:    Google Cloud Storage
+  - webdav: WebDAV (Nextcloud, ownCloud, etc. - self-hosted)
 
 Examples:
   claude-sync init                # Full setup wizard
@@ -149,12 +154,12 @@ Examples:
 			}
 
 			// Normal flow: full setup
-			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile, usePassphrase, force)
+			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, usePassphrase, force)
 		},
 	}
 
 	// Provider selection
-	cmd.Flags().StringVar(&provider, "provider", "", "Storage provider: r2, s3, or gcs")
+	cmd.Flags().StringVar(&provider, "provider", "", "Storage provider: r2, s3, gcs, or webdav")
 	cmd.Flags().StringVar(&bucket, "bucket", "", "Bucket name")
 	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config/key without prompting")
@@ -170,6 +175,12 @@ Examples:
 	// GCS flags
 	cmd.Flags().StringVar(&gcsProjectID, "project-id", "", "GCP Project ID (GCS)")
 	cmd.Flags().StringVar(&gcsCredentialsFile, "credentials-file", "", "Path to GCS credentials JSON file")
+
+	// WebDAV flags
+	cmd.Flags().StringVar(&webdavURL, "webdav-url", "", "WebDAV URL (e.g. https://cloud.example.com/remote.php/dav/files/user/)")
+	cmd.Flags().StringVar(&webdavUsername, "webdav-username", "", "WebDAV username")
+	cmd.Flags().StringVar(&webdavPassword, "webdav-password", "", "WebDAV app password")
+	cmd.Flags().StringVar(&webdavPathPrefix, "webdav-path-prefix", "claude-sync", "WebDAV path prefix (subdirectory)")
 
 	return cmd
 }
@@ -216,7 +227,7 @@ func initPassphraseOnly(ctx context.Context, keyPath string) error {
 }
 
 // initFullSetup handles the full init wizard
-func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile string, usePassphrase, force bool) error {
+func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix string, usePassphrase, force bool) error {
 	if config.Exists() && !force {
 		var overwrite bool
 		prompt := &survey.Confirm{
@@ -241,6 +252,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 				"Cloudflare R2 (recommended - free tier: 10GB)",
 				"Amazon S3",
 				"Google Cloud Storage",
+				"WebDAV (Nextcloud, ownCloud, etc. - self-hosted)",
 			},
 		}
 		var choice int
@@ -254,6 +266,8 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 			provider = "s3"
 		case 2:
 			provider = "gcs"
+		case 3:
+			provider = "webdav"
 		}
 	}
 
@@ -268,6 +282,8 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 		storageCfg, err = runS3Wizard(accessKey, secretKey, s3Region, bucket)
 	case "gcs":
 		storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
+	case "webdav":
+		storageCfg, err = runWebDAVWizard(webdavURL, webdavUsername, webdavPassword, webdavPathPrefix)
 	default:
 		return fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -362,9 +378,16 @@ skipKeyGen:
 	if err != nil {
 		return fmt.Errorf("could not verify bucket '%s': %w", storageCfg.Bucket, err)
 	} else if !exists {
+		if storageCfg.Provider == storage.ProviderWebDAV {
+			return fmt.Errorf("could not access WebDAV path '%s' - check your URL and credentials", storageCfg.PathPrefix)
+		}
 		return fmt.Errorf("bucket '%s' does not exist. Please create it first in your storage provider's console.\n  For R2: https://dash.cloudflare.com/ → R2 → Create bucket\n  For S3: https://console.aws.amazon.com/s3/ → Create bucket (use 'automatic' location)\n  For GCS: https://console.cloud.google.com/storage/ → Create bucket", storageCfg.Bucket)
 	}
-	printSuccess("Connected to '" + storageCfg.Bucket + "'")
+	if storageCfg.Provider == storage.ProviderWebDAV {
+		printSuccess("Connected to WebDAV ('" + storageCfg.PathPrefix + "')")
+	} else {
+		printSuccess("Connected to '" + storageCfg.Bucket + "'")
+	}
 
 	// Clear remote if user chose to start fresh
 	if shouldClearRemote {
@@ -736,6 +759,91 @@ func runGCSWizard(projectID, credentialsFile, bucket string) (*storage.StorageCo
 		cfg.CredentialsFile = credPath
 	} else {
 		cfg.UseDefaultCredentials = true
+	}
+
+	return cfg, nil
+}
+
+func runWebDAVWizard(webdavURL, username, password, pathPrefix string) (*storage.StorageConfig, error) {
+	fmt.Printf("  %sWebDAV Setup (Nextcloud, ownCloud, etc.)%s\n\n", colorBold, colorReset)
+	printInfo("You need a WebDAV server URL, username, and an app password.")
+	fmt.Println()
+	fmt.Printf("  %sNextcloud:%s Go to Settings → Security → Devices & sessions\n", colorCyan, colorReset)
+	printInfo("  to create an app password (recommended over your account password)")
+	fmt.Println()
+	fmt.Printf("  %sURL format:%s https://cloud.example.com/remote.php/dav/files/USERNAME/\n", colorCyan, colorReset)
+	fmt.Println()
+
+	answers := struct {
+		URL        string
+		Username   string
+		Password   string
+		PathPrefix string
+	}{
+		URL:        webdavURL,
+		Username:   username,
+		Password:   password,
+		PathPrefix: pathPrefix,
+	}
+
+	questions := []*survey.Question{
+		{
+			Name: "URL",
+			Prompt: &survey.Input{
+				Message: "WebDAV URL:",
+				Default: webdavURL,
+				Help:    "For Nextcloud: https://your-server/remote.php/dav/files/USERNAME/",
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "Username",
+			Prompt: &survey.Input{
+				Message: "Username:",
+				Default: username,
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "Password",
+			Prompt: &survey.Password{
+				Message: "App password:",
+				Help:    "Use an app-specific password, not your account password",
+			},
+		},
+		{
+			Name: "PathPrefix",
+			Prompt: &survey.Input{
+				Message: "Path prefix (subdirectory for sync data):",
+				Default: func() string {
+					if pathPrefix != "" {
+						return pathPrefix
+					}
+					return "claude-sync"
+				}(),
+			},
+			Validate: survey.Required,
+		},
+	}
+
+	if err := survey.Ask(questions, &answers); err != nil {
+		return nil, err
+	}
+
+	if answers.Password == "" && password != "" {
+		answers.Password = password
+	}
+	if answers.Password == "" {
+		return nil, fmt.Errorf("app password is required")
+	}
+
+	cfg := &storage.StorageConfig{
+		Provider:       storage.ProviderWebDAV,
+		Bucket:         answers.PathPrefix,
+		WebDAVURL:      answers.URL,
+		WebDAVUsername:  answers.Username,
+		WebDAVPassword: answers.Password,
+		PathPrefix:     answers.PathPrefix,
 	}
 
 	return cfg, nil
