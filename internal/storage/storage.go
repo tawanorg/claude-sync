@@ -10,9 +10,10 @@ import (
 type Provider string
 
 const (
-	ProviderR2  Provider = "r2"
-	ProviderS3  Provider = "s3"
-	ProviderGCS Provider = "gcs"
+	ProviderR2     Provider = "r2"
+	ProviderS3     Provider = "s3"
+	ProviderGCS    Provider = "gcs"
+	ProviderWebDAV Provider = "webdav"
 )
 
 // ObjectInfo contains metadata about a stored object
@@ -60,6 +61,8 @@ func New(cfg *StorageConfig) (Storage, error) {
 		return NewS3(cfg)
 	case ProviderGCS:
 		return NewGCS(cfg)
+	case ProviderWebDAV:
+		return NewWebDAV(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", cfg.Provider)
 	}
@@ -73,3 +76,6 @@ var NewS3 func(cfg *StorageConfig) (Storage, error)
 
 // NewGCS creates a new GCS storage adapter (implemented in gcs/gcs.go)
 var NewGCS func(cfg *StorageConfig) (Storage, error)
+
+// NewWebDAV creates a new WebDAV storage adapter (implemented in webdav/webdav.go)
+var NewWebDAV func(cfg *StorageConfig) (Storage, error)
