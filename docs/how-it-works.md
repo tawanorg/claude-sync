@@ -527,7 +527,9 @@ For automatic syncing, add to your shell profile:
 
 # Auto-pull on shell start (background, quiet)
 if command -v claude-sync &> /dev/null; then
-  claude-sync pull -q &
+  # Subshell detaches the job from the parent shell's job table —
+  # avoids `[1] 12345` / `[1] + done` noise on every terminal open.
+  (claude-sync pull -q &) >/dev/null 2>&1
 fi
 
 # Auto-push on shell exit (quiet)
@@ -537,6 +539,8 @@ trap 'claude-sync push -q' EXIT
 This ensures:
 - Fresh sessions are pulled when you start a terminal
 - Local changes are pushed when you close a terminal
+
+> See the [README's Shell Integration section](../README.md#shell-integration) for the rationale behind the `(cmd &)` subshell wrapper.
 
 ---
 
