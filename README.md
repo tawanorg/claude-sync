@@ -260,12 +260,18 @@ Add to `~/.zshrc` or `~/.bashrc`:
 ```bash
 # Auto-pull on shell start
 if command -v claude-sync &> /dev/null; then
-  claude-sync pull -q &
+  # Run in a subshell so the job is detached from the parent shell's
+  # job table — avoids interactive `[1] 12345` / `[1] + done` noise.
+  (claude-sync pull -q &) >/dev/null 2>&1
 fi
 
 # Auto-push on shell exit
 trap 'claude-sync push -q' EXIT
 ```
+
+> **Note:** The subshell wrapper `(cmd &)` prevents zsh/bash from printing job control
+> messages (`[1] 12345` on start and `[1] + done cmd` on completion) every time you open
+> a terminal. A plain `claude-sync pull -q &` works but produces noisy shell prompts.
 
 ## Pulling with Existing Files
 
