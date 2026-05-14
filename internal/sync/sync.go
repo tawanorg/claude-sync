@@ -34,6 +34,7 @@ type Syncer struct {
 	quiet      bool
 	onProgress ProgressFunc
 	cfg        *config.Config
+	pathMapper *PathMapper
 }
 
 type SyncResult struct {
@@ -85,25 +86,30 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 		claudeDir = cfg.ClaudeDirOverride
 	}
 
+	homeDir, _ := os.UserHomeDir()
+
 	return &Syncer{
-		storage:   store,
-		encryptor: enc,
-		state:     state,
-		claudeDir: claudeDir,
-		quiet:     quiet,
-		cfg:       cfg,
+		storage:    store,
+		encryptor:  enc,
+		state:      state,
+		claudeDir:  claudeDir,
+		quiet:      quiet,
+		cfg:        cfg,
+		pathMapper: NewPathMapper(homeDir),
 	}, nil
 }
 
 // NewSyncerWith creates a Syncer with pre-built dependencies (for testing).
 func NewSyncerWith(cfg *config.Config, store storage.Storage, enc *crypto.Encryptor, state *SyncState, claudeDir string, quiet bool) *Syncer {
+	homeDir, _ := os.UserHomeDir()
 	return &Syncer{
-		storage:   store,
-		encryptor: enc,
-		state:     state,
-		claudeDir: claudeDir,
-		quiet:     quiet,
-		cfg:       cfg,
+		storage:    store,
+		encryptor:  enc,
+		state:      state,
+		claudeDir:  claudeDir,
+		quiet:      quiet,
+		cfg:        cfg,
+		pathMapper: NewPathMapper(homeDir),
 	}
 }
 
@@ -376,6 +382,11 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	// Normalize home directory paths in project file content for cross-device portability
+	if s.pathMapper.IsProjectPath(relativePath) {
+		data = s.pathMapper.NormalizeContent(data)
+	}
+
 	// Compress
 	compressed, err := gzipCompress(data)
 	if err != nil {
@@ -424,6 +435,11 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 		}
 	}
 
+	// Resolve ${HOME} placeholders to local home directory in project file content
+	if s.pathMapper.IsProjectPath(relativePath) {
+		data = s.pathMapper.ResolveContent(data)
+	}
+
 	// Ensure directory exists
 	fullPath := filepath.Join(s.claudeDir, relativePath)
 	dir := filepath.Dir(fullPath)
@@ -458,13 +474,15 @@ func (s *Syncer) handleConflict(ctx context.Context, relativePath string, remote
 }
 
 func (s *Syncer) remoteKey(relativePath string) string {
-	// Add .age extension for encrypted files
-	return relativePath + ".age"
+	// Normalize project paths so different home dirs map to the same remote key
+	normalized := s.pathMapper.NormalizeRemoteKey(relativePath)
+	return normalized + ".age"
 }
 
 func (s *Syncer) localPath(remoteKey string) string {
-	// Remove .age extension
-	return strings.TrimSuffix(remoteKey, ".age")
+	// Strip .age, then resolve ${HOME} to the local home directory
+	stripped := strings.TrimSuffix(remoteKey, ".age")
+	return s.pathMapper.ResolveLocalPath(stripped)
 }
 
 func (s *Syncer) GetState() *SyncState {
