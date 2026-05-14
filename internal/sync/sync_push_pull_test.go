@@ -101,6 +101,17 @@ func (m *mockStorage) BucketExists(_ context.Context) (bool, error) {
 	return true, nil
 }
 
+// ListKeys returns all keys in the mock storage (for test assertions).
+func (m *mockStorage) ListKeys() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	keys := make([]string, 0, len(m.objects))
+	for k := range m.objects {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // helper to create a test syncer with mock storage and temp dirs
 type testEnv struct {
 	syncer    *Syncer
@@ -138,13 +149,15 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 
 	store := newMockStorage()
+	homeDir, _ := os.UserHomeDir()
 	syncer := &Syncer{
-		storage:   store,
-		encryptor: enc,
-		state:     state,
-		claudeDir: claudeDir,
-		quiet:     true,
-		cfg:       &config.Config{},
+		storage:    store,
+		encryptor:  enc,
+		state:      state,
+		claudeDir:  claudeDir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper(homeDir),
 	}
 
 	return &testEnv{
@@ -449,13 +462,15 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 	}
 
 	stateA, _ := LoadStateFromDir(deviceAStateDir)
+	homeDir, _ := os.UserHomeDir()
 	syncerA := &Syncer{
-		storage:   sharedStore,
-		encryptor: enc,
-		state:     stateA,
-		claudeDir: deviceADir,
-		quiet:     true,
-		cfg:       &config.Config{},
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      stateA,
+		claudeDir:  deviceADir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper(homeDir),
 	}
 
 	// Device A creates files and pushes
@@ -484,12 +499,13 @@ func TestPushThenPullRoundTrip(t *testing.T) {
 
 	stateB, _ := LoadStateFromDir(deviceBStateDir)
 	syncerB := &Syncer{
-		storage:   sharedStore,
-		encryptor: enc,
-		state:     stateB,
-		claudeDir: deviceBDir,
-		quiet:     true,
-		cfg:       &config.Config{},
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      stateB,
+		claudeDir:  deviceBDir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper(homeDir),
 	}
 
 	// Device B pulls
@@ -599,5 +615,359 @@ func TestPullEmptyRemoteIsNoop(t *testing.T) {
 	}
 	if len(result.Downloaded) != 0 {
 		t.Errorf("Expected 0 downloads, got %d", len(result.Downloaded))
+	}
+}
+
+func TestCrossDeviceProjectSync(t *testing.T) {
+	// Simulates two machines with different home directories syncing project data.
+	// Device A: home=/Users/merv → project dir -Users-merv-nexura
+	// Device B: home=/Users/mervynlally → project dir -Users-mervynlally-nexura
+	tmpDir := t.TempDir()
+
+	keyPath := filepath.Join(tmpDir, "age-key.txt")
+	if err := crypto.GenerateKeyFromPassphrase(keyPath, "cross-device-test"); err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	enc, err := crypto.NewEncryptor(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to create encryptor: %v", err)
+	}
+
+	sharedStore := newMockStorage()
+	ctx := context.Background()
+
+	// --- Device A: /Users/merv ---
+	deviceADir := filepath.Join(tmpDir, "deviceA", ".claude")
+	deviceAStateDir := filepath.Join(tmpDir, "deviceA", ".claude-sync")
+	os.MkdirAll(deviceADir, 0700)
+	os.MkdirAll(deviceAStateDir, 0700)
+
+	stateA, _ := LoadStateFromDir(deviceAStateDir)
+	syncerA := &Syncer{
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      stateA,
+		claudeDir:  deviceADir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper("/Users/merv"),
+	}
+
+	// Create project files as they'd appear on Device A
+	writeFile(t, deviceADir, "projects/-Users-merv-nexura/memory/MEMORY.md",
+		"- [Repo info](repo.md) — origin is /Users/merv/nexura")
+	writeFile(t, deviceADir, "projects/-Users-merv-nexura/memory/repo.md",
+		"Local checkout at /Users/merv/nexura")
+	writeFile(t, deviceADir, "projects/-Users-merv-nexura/abc123.jsonl",
+		`{"type":"tool_result","path":"/Users/merv/nexura/src/app.ts"}`+"\n")
+	// Also push a non-project file to verify it's unaffected
+	writeFile(t, deviceADir, "CLAUDE.md", "# Global config")
+
+	resultA, err := syncerA.Push(ctx)
+	if err != nil {
+		t.Fatalf("Device A push failed: %v", err)
+	}
+	if len(resultA.Uploaded) != 4 {
+		t.Fatalf("Device A expected 4 uploads, got %d: %v", len(resultA.Uploaded), resultA.Uploaded)
+	}
+
+	// Verify remote keys use ${HOME} for project paths
+	remoteKeys := sharedStore.ListKeys()
+	for _, key := range remoteKeys {
+		if strings.HasPrefix(key, "projects/") {
+			if strings.Contains(key, "-Users-merv") {
+				t.Errorf("Remote key should be normalized but contains literal home dir: %s", key)
+			}
+			if !strings.Contains(key, "${HOME}") {
+				t.Errorf("Remote key should contain ${HOME}: %s", key)
+			}
+		}
+	}
+
+	// --- Device B: /Users/mervynlally ---
+	deviceBDir := filepath.Join(tmpDir, "deviceB", ".claude")
+	deviceBStateDir := filepath.Join(tmpDir, "deviceB", ".claude-sync")
+	os.MkdirAll(deviceBDir, 0700)
+	os.MkdirAll(deviceBStateDir, 0700)
+
+	stateB, _ := LoadStateFromDir(deviceBStateDir)
+	syncerB := &Syncer{
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      stateB,
+		claudeDir:  deviceBDir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper("/Users/mervynlally"),
+	}
+
+	resultB, err := syncerB.Pull(ctx)
+	if err != nil {
+		t.Fatalf("Device B pull failed: %v", err)
+	}
+	if len(resultB.Downloaded) != 4 {
+		t.Fatalf("Device B expected 4 downloads, got %d: %v", len(resultB.Downloaded), resultB.Downloaded)
+	}
+
+	// Verify files landed under the CORRECT project dir for Device B
+	memoryContent := readFile(t, deviceBDir, "projects/-Users-mervynlally-nexura/memory/MEMORY.md")
+	if !strings.Contains(memoryContent, "/Users/mervynlally/nexura") {
+		t.Errorf("Memory file should have resolved paths for Device B, got: %s", memoryContent)
+	}
+	if strings.Contains(memoryContent, "/Users/merv/") {
+		t.Errorf("Memory file should NOT contain Device A paths, got: %s", memoryContent)
+	}
+
+	repoContent := readFile(t, deviceBDir, "projects/-Users-mervynlally-nexura/memory/repo.md")
+	if !strings.Contains(repoContent, "/Users/mervynlally/nexura") {
+		t.Errorf("Repo file should have resolved paths, got: %s", repoContent)
+	}
+
+	sessionContent := readFile(t, deviceBDir, "projects/-Users-mervynlally-nexura/abc123.jsonl")
+	if !strings.Contains(sessionContent, "/Users/mervynlally/nexura/src/app.ts") {
+		t.Errorf("Session file should have resolved paths, got: %s", sessionContent)
+	}
+
+	// Non-project file should be unaffected
+	globalConfig := readFile(t, deviceBDir, "CLAUDE.md")
+	if globalConfig != "# Global config" {
+		t.Errorf("Global CLAUDE.md should be unchanged, got: %s", globalConfig)
+	}
+}
+
+func TestCrossDeviceProjectSync_BothDirections(t *testing.T) {
+	// Device A pushes, Device B pulls AND pushes new files, Device A pulls them back.
+	tmpDir := t.TempDir()
+
+	keyPath := filepath.Join(tmpDir, "age-key.txt")
+	if err := crypto.GenerateKeyFromPassphrase(keyPath, "bidirectional-test"); err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	enc, err := crypto.NewEncryptor(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to create encryptor: %v", err)
+	}
+
+	sharedStore := newMockStorage()
+	ctx := context.Background()
+
+	// Device A: /Users/merv
+	deviceADir := filepath.Join(tmpDir, "deviceA", ".claude")
+	deviceAStateDir := filepath.Join(tmpDir, "deviceA", ".claude-sync")
+	os.MkdirAll(deviceADir, 0700)
+	os.MkdirAll(deviceAStateDir, 0700)
+	stateA, _ := LoadStateFromDir(deviceAStateDir)
+	syncerA := &Syncer{
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      stateA,
+		claudeDir:  deviceADir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper("/Users/merv"),
+	}
+
+	// Device B: /Users/mervynlally
+	deviceBDir := filepath.Join(tmpDir, "deviceB", ".claude")
+	deviceBStateDir := filepath.Join(tmpDir, "deviceB", ".claude-sync")
+	os.MkdirAll(deviceBDir, 0700)
+	os.MkdirAll(deviceBStateDir, 0700)
+	stateB, _ := LoadStateFromDir(deviceBStateDir)
+	syncerB := &Syncer{
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      stateB,
+		claudeDir:  deviceBDir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper("/Users/mervynlally"),
+	}
+
+	// Step 1: Device A creates memory and pushes
+	writeFile(t, deviceADir, "projects/-Users-merv-nexura/memory/MEMORY.md",
+		"- [Auth info](auth.md) — session tokens in /Users/merv/nexura/config")
+	if _, err := syncerA.Push(ctx); err != nil {
+		t.Fatalf("Device A push failed: %v", err)
+	}
+
+	// Step 2: Device B pulls
+	if _, err := syncerB.Pull(ctx); err != nil {
+		t.Fatalf("Device B pull failed: %v", err)
+	}
+
+	// Verify Device B got the file with resolved paths
+	got := readFile(t, deviceBDir, "projects/-Users-mervynlally-nexura/memory/MEMORY.md")
+	if !strings.Contains(got, "/Users/mervynlally/nexura/config") {
+		t.Fatalf("Device B should see resolved paths, got: %s", got)
+	}
+
+	// Step 3: Device B adds a new memory file and pushes
+	writeFile(t, deviceBDir, "projects/-Users-mervynlally-nexura/memory/deploy.md",
+		"Deploy script at /Users/mervynlally/nexura/scripts/deploy.sh")
+	if _, err := syncerB.Push(ctx); err != nil {
+		t.Fatalf("Device B push failed: %v", err)
+	}
+
+	// Step 4: Device A pulls
+	if _, err := syncerA.Pull(ctx); err != nil {
+		t.Fatalf("Device A pull failed: %v", err)
+	}
+
+	// Verify Device A got the new file with its own paths
+	got = readFile(t, deviceADir, "projects/-Users-merv-nexura/memory/deploy.md")
+	if !strings.Contains(got, "/Users/merv/nexura/scripts/deploy.sh") {
+		t.Fatalf("Device A should see resolved paths, got: %s", got)
+	}
+	if strings.Contains(got, "/Users/mervynlally/") {
+		t.Fatalf("Device A should NOT see Device B paths, got: %s", got)
+	}
+}
+
+func TestCrossDeviceProjectSync_LegacyKeyPassthrough(t *testing.T) {
+	// Simulates pulling data that was pushed by an older version of claude-sync
+	// (before path normalization) — legacy keys without ${HOME} should still work.
+	tmpDir := t.TempDir()
+
+	keyPath := filepath.Join(tmpDir, "age-key.txt")
+	if err := crypto.GenerateKeyFromPassphrase(keyPath, "legacy-test"); err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	enc, err := crypto.NewEncryptor(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to create encryptor: %v", err)
+	}
+
+	sharedStore := newMockStorage()
+	ctx := context.Background()
+
+	// Simulate old-style push: upload with literal path in the remote key
+	content := []byte("# Old memory content with /Users/merv/nexura path")
+	compressed, _ := gzipCompress(content)
+	encrypted, _ := enc.Encrypt(compressed)
+	// Legacy key: no ${HOME}, literal home dir in path
+	if err := sharedStore.Upload(ctx, "projects/-Users-merv-nexura/memory/old.md.age", encrypted); err != nil {
+		t.Fatalf("Upload legacy key failed: %v", err)
+	}
+
+	// Pull on the SAME machine (legacy key matches local home dir)
+	deviceDir := filepath.Join(tmpDir, "device", ".claude")
+	deviceStateDir := filepath.Join(tmpDir, "device", ".claude-sync")
+	os.MkdirAll(deviceDir, 0700)
+	os.MkdirAll(deviceStateDir, 0700)
+	state, _ := LoadStateFromDir(deviceStateDir)
+	syncer := &Syncer{
+		storage:    sharedStore,
+		encryptor:  enc,
+		state:      state,
+		claudeDir:  deviceDir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper("/Users/merv"),
+	}
+
+	result, err := syncer.Pull(ctx)
+	if err != nil {
+		t.Fatalf("Pull with legacy key failed: %v", err)
+	}
+	if len(result.Downloaded) != 1 {
+		t.Fatalf("Expected 1 download, got %d", len(result.Downloaded))
+	}
+
+	// Legacy key resolves to same-machine local path (no ${HOME} to resolve)
+	got := readFile(t, deviceDir, "projects/-Users-merv-nexura/memory/old.md")
+	if !strings.Contains(got, "Old memory content") {
+		t.Errorf("Legacy content should be preserved, got: %s", got)
+	}
+}
+
+func TestMigrateRemoteKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	keyPath := filepath.Join(tmpDir, "age-key.txt")
+	if err := crypto.GenerateKeyFromPassphrase(keyPath, "migrate-test"); err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	enc, err := crypto.NewEncryptor(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to create encryptor: %v", err)
+	}
+
+	store := newMockStorage()
+	ctx := context.Background()
+
+	// Upload some legacy keys (literal home dir paths)
+	for _, key := range []string{
+		"projects/-Users-merv-nexura/memory/MEMORY.md.age",
+		"projects/-Users-merv-nexura/abc.jsonl.age",
+		"projects/-Users-mervynlally-nexura/memory/deploy.md.age",
+	} {
+		data, _ := enc.Encrypt([]byte("content for " + key))
+		store.Upload(ctx, key, data)
+	}
+
+	// Upload a normalized key (should be skipped)
+	normalized, _ := enc.Encrypt([]byte("already normalized"))
+	store.Upload(ctx, "projects/${HOME}-nexura/memory/new.md.age", normalized)
+
+	// Upload a non-project key (should be skipped)
+	nonProject, _ := enc.Encrypt([]byte("settings"))
+	store.Upload(ctx, "settings.json.age", nonProject)
+
+	// Create syncer with /Users/merv as home dir
+	deviceDir := filepath.Join(tmpDir, "device", ".claude")
+	deviceStateDir := filepath.Join(tmpDir, "device", ".claude-sync")
+	os.MkdirAll(deviceDir, 0700)
+	os.MkdirAll(deviceStateDir, 0700)
+	state, _ := LoadStateFromDir(deviceStateDir)
+	syncer := &Syncer{
+		storage:    store,
+		encryptor:  enc,
+		state:      state,
+		claudeDir:  deviceDir,
+		quiet:      true,
+		cfg:        &config.Config{},
+		pathMapper: NewPathMapper("/Users/merv"),
+	}
+
+	// Dry run first
+	dryResult, err := syncer.MigrateRemoteKeys(ctx, true)
+	if err != nil {
+		t.Fatalf("Dry run failed: %v", err)
+	}
+	// Should identify the 2 keys owned by /Users/merv as migratable
+	// The -Users-mervynlally key can't be normalized by this machine
+	if len(dryResult.Migrated) != 2 {
+		t.Errorf("Dry run: expected 2 migratable, got %d: %v", len(dryResult.Migrated), dryResult.Migrated)
+	}
+	// Verify nothing actually changed
+	allKeys := store.ListKeys()
+	if len(allKeys) != 5 {
+		t.Errorf("Dry run should not change storage: expected 5 keys, got %d", len(allKeys))
+	}
+
+	// Real migration
+	result, err := syncer.MigrateRemoteKeys(ctx, false)
+	if err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	if len(result.Errors) > 0 {
+		t.Errorf("Unexpected errors: %v", result.Errors)
+	}
+	// 2 legacy keys from /Users/merv migrated
+	if len(result.Migrated) != 2 {
+		t.Errorf("Expected 2 migrated, got %d: %v", len(result.Migrated), result.Migrated)
+	}
+
+	// Verify old keys are gone and normalized keys exist
+	finalKeys := store.ListKeys()
+	for _, key := range finalKeys {
+		if strings.Contains(key, "-Users-merv-") && strings.HasPrefix(key, "projects/") {
+			t.Errorf("Legacy key should be deleted: %s", key)
+		}
+	}
+	// Should have: 2 normalized merv keys, 1 mervynlally legacy (can't migrate), 1 already-normalized, 1 settings
+	if len(finalKeys) != 5 {
+		t.Errorf("Expected 5 final keys, got %d: %v", len(finalKeys), finalKeys)
 	}
 }

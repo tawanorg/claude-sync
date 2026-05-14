@@ -1,0 +1,2939 @@
+{
+  "root": "/Users/merv/claude-sync",
+  "created_at": 1778770274.554911,
+  "updated_at": 1778770274.616375,
+  "files": {
+    ".releaserc.json": {
+      "path": ".releaserc.json",
+      "mtime": 1776288017.116328,
+      "size": 858,
+      "hash": "fafb9d2cf359f20e",
+      "language": "JSON",
+      "lines": 24,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"branches\": [\"main\"],\n  \"plugins\": [\n    \"@semantic-release/commit-analyzer\",\n    \"@semantic-release/release-notes-generator\",\n    \"@semantic-release/changelog\",\n    [\"@semantic-release/exec\", {\n      \"prepareCmd\": \"VERSION=${nextRelease.version} make build-all\"\n    }],\n    [\"@semantic-release/git\", {\n      \"assets\": [\"CHANGELOG.md\"],\n      \"message\": \"chore(release): ${nextRelease.version} [skip ci]\\n\\n${nextRelease.notes}\"\n    }],\n    [\"@semantic-release/github\", {\n      \"assets\": [\n      "
+    },
+    "CHANGELOG.md": {
+      "path": "CHANGELOG.md",
+      "mtime": 1776288017.1164508,
+      "size": 9151,
+      "hash": "e7352c091b797334",
+      "language": "Markdown",
+      "lines": 228,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "## [1.8.1](https://github.com/tawanorg/claude-sync/compare/v1.8.0...v1.8.1) (2026-04-06)\n\n\n### Bug Fixes\n\n* fail init when storage bucket does not exist ([11ad555](https://github.com/tawanorg/claude-sync/commit/11ad555dc2fd0a50e1224702b8612d9a5cfd583d)), closes [#21](https://github.com/tawanorg/claude-sync/issues/21)\n\n# [1.8.0](https://github.com/tawanorg/claude-sync/compare/v1.7.0...v1.8.0) (2026-04-01)\n\n\n### Features\n\n* add NewSyncerWith for dependency-injected testing ([60c21bc](https://githu"
+    },
+    "Makefile": {
+      "path": "Makefile",
+      "mtime": 1776288017.1165187,
+      "size": 1864,
+      "hash": "ce522ccb82d94318",
+      "language": "Makefile",
+      "lines": 76,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": ".PHONY: build install clean test fmt lint release-dry-run setup-hooks check\n\nBINARY_NAME=claude-sync\nVERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo \"dev\")\nBUILD_DIR=bin\nGO=go\n\n# Build flags\nLDFLAGS=-ldflags \"-s -w -X main.version=$(VERSION)\"\n\n# Default target\nall: build\n\n# Build the binary\nbuild:\n\t$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/claude-sync\n\n# Install to GOPATH/bin\ninstall:\n\t$(GO) install $(LDFLAGS) ./cmd/claude-sync\n\n# Clean build artifacts"
+    },
+    "SECURITY-AUDIT.md": {
+      "path": "SECURITY-AUDIT.md",
+      "mtime": 1776288017.1167443,
+      "size": 6065,
+      "hash": "833772a87dc1d0e8",
+      "language": "Markdown",
+      "lines": 167,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "# Security Audit Report: claude-sync\n\n**Date:** 2026-03-08\n**Version:** 1.2.2\n**Auditor:** WALL-E (AI Security Agent)\n**Scope:** Full codebase review \u2014 source, dependencies, crypto, supply chain\n\n---\n\n## Executive Summary\n\nclaude-sync is a Go CLI tool (with npm wrapper) that syncs `~/.claude` directories across devices using cloud storage (R2/S3/GCS) with age encryption. **No critical or high vulnerabilities found.** Five medium findings relate to supply chain integrity and cryptographic design "
+    },
+    "README.md": {
+      "path": "README.md",
+      "mtime": 1776288017.1166375,
+      "size": 11893,
+      "hash": "c5f756aee6ead6c6",
+      "language": "Markdown",
+      "lines": 421,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "<div align=\"center\">\n\n<img src=\"assets/banner.svg\" alt=\"Claude Sync\" width=\"100%\">\n\n<br>\n\n*Encrypted with [age](https://github.com/FiloSottile/age) \u2022 R2 / S3 / GCS supported*\n\n[![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)\n[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)\n[![npm](https://img.shields.io/npm/v/@tawandotorg/claude-sync)](https://www.npmjs.com/package/@tawandotorg/claude-sync)\n[![Soc"
+    },
+    "package.json": {
+      "path": "package.json",
+      "mtime": 1776288017.128994,
+      "size": 1036,
+      "hash": "8bd8eac0342df2e7",
+      "language": "JSON",
+      "lines": 42,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync\",\n  \"version\": \"0.4.0\",\n  \"description\": \"Sync Claude Code sessions across devices with encrypted cloud storage\",\n  \"bin\": {\n    \"claude-sync\": \"./bin/claude-sync.js\"\n  },\n  \"keywords\": [\n    \"claude\",\n    \"claude-code\",\n    \"sync\",\n    \"cli\",\n    \"anthropic\",\n    \"ai\",\n    \"r2\",\n    \"s3\",\n    \"gcs\",\n    \"encryption\"\n  ],\n  \"author\": \"tawanorg\",\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.g"
+    },
+    "install.js": {
+      "path": "install.js",
+      "mtime": 1776288017.1261148,
+      "size": 3802,
+      "hash": "bf6a517b6e96bec9",
+      "language": "JavaScript",
+      "lines": 150,
+      "imports": [
+        "fs",
+        "path",
+        "https"
+      ],
+      "exports": [],
+      "functions": [
+        "getDownloadUrl",
+        "getLatestVersion",
+        "getBinaryName",
+        "install",
+        "getPlatform",
+        "request",
+        "getArch",
+        "download"
+      ],
+      "classes": [],
+      "content_preview": "#!/usr/bin/env node\n\nconst https = require(\"https\");\nconst fs = require(\"fs\");\nconst path = require(\"path\");\n\nconst REPO = \"tawanorg/claude-sync\";\n\nfunction getPlatform() {\n  const platform = process.platform;\n  switch (platform) {\n    case \"darwin\":\n      return \"darwin\";\n    case \"linux\":\n      return \"linux\";\n    case \"win32\":\n      return \"windows\";\n    default:\n      throw new Error(`Unsupported platform: ${platform}`);\n  }\n}\n\nfunction getArch() {\n  const arch = process.arch;\n  switch (arch"
+    },
+    "CLAUDE.md": {
+      "path": "CLAUDE.md",
+      "mtime": 1776289816.9028256,
+      "size": 8099,
+      "hash": "0bdfc1e21a7d7c81",
+      "language": "Markdown",
+      "lines": 83,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\n## Repository Purpose\n\n`claude-sync` is a Go CLI that syncs `~/.claude/` (Claude Code state: sessions, agents, skills, plugins, settings, history, global `CLAUDE.md`) across devices via encrypted cloud storage (Cloudflare R2 / AWS S3 / GCS). Files are gzip-compressed, then age-encrypted before upload. The canonical binary is distributed as pre-compiled platform-specific npm packag"
+    },
+    "bin/claude-sync.js": {
+      "path": "bin/claude-sync.js",
+      "mtime": 1776288017.1238244,
+      "size": 2026,
+      "hash": "1bcaf4291e731711",
+      "language": "JavaScript",
+      "lines": 67,
+      "imports": [
+        "fs",
+        "path",
+        "child_process"
+      ],
+      "exports": [],
+      "functions": [
+        "getBinaryPath"
+      ],
+      "classes": [],
+      "content_preview": "#!/usr/bin/env node\n\nconst { spawn } = require(\"child_process\");\nconst path = require(\"path\");\nconst fs = require(\"fs\");\n\nconst PLATFORM_PACKAGES = {\n  \"darwin-arm64\": \"@tawandotorg/claude-sync-darwin-arm64\",\n  \"darwin-x64\": \"@tawandotorg/claude-sync-darwin-x64\",\n  \"linux-arm64\": \"@tawandotorg/claude-sync-linux-arm64\",\n  \"linux-x64\": \"@tawandotorg/claude-sync-linux-x64\",\n  \"win32-arm64\": \"@tawandotorg/claude-sync-win32-arm64\",\n  \"win32-x64\": \"@tawandotorg/claude-sync-win32-x64\",\n};\n\nfunction get"
+    },
+    "integration/README.md": {
+      "path": "integration/README.md",
+      "mtime": 1776288017.1262722,
+      "size": 2542,
+      "hash": "1e58163d4f9b1db9",
+      "language": "Markdown",
+      "lines": 93,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "# Integration Tests\n\nThis directory contains integration tests that verify cross-device sync with real R2 storage.\n\n## Prerequisites\n\n1. **R2 Bucket**: Create a dedicated test bucket in Cloudflare R2\n2. **API Token**: Create an R2 API token with read/write access\n3. **Docker**: Required for multi-device simulation\n\n## Running Tests\n\n### With Docker (Recommended)\n\nThis simulates two separate devices with isolated filesystems:\n\n```bash\n# Set environment variables\nexport CLAUDE_SYNC_R2_ACCOUNT_ID=y"
+    },
+    "integration/docker-compose.yml": {
+      "path": "integration/docker-compose.yml",
+      "mtime": 1776288017.1263304,
+      "size": 2010,
+      "hash": "76e3b5e6951c00c5",
+      "language": "YAML",
+      "lines": 66,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "version: '3.8'\n\n# Cross-device integration tests for claude-sync\n# Each container simulates a separate device with isolated filesystem\n\nservices:\n  device-a:\n    build:\n      context: ..\n      dockerfile: integration/Dockerfile.test\n    tty: true\n    stdin_open: true\n    environment:\n      - CLAUDE_SYNC_R2_ACCOUNT_ID=${CLAUDE_SYNC_R2_ACCOUNT_ID}\n      - CLAUDE_SYNC_R2_ACCESS_KEY_ID=${CLAUDE_SYNC_R2_ACCESS_KEY_ID}\n      - CLAUDE_SYNC_R2_SECRET_ACCESS_KEY=${CLAUDE_SYNC_R2_SECRET_ACCESS_KEY}\n      "
+    },
+    "integration/r2_sync_test.go": {
+      "path": "integration/r2_sync_test.go",
+      "mtime": 1776288017.126417,
+      "size": 18106,
+      "hash": "8c95a77654241b4e",
+      "language": "Go",
+      "lines": 605,
+      "imports": [
+        "testing",
+        "storage",
+        "os",
+        "config",
+        "r2",
+        "context",
+        "sha256",
+        "filepath",
+        "crypto",
+        "sync",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "TestPullWithExistingFiles",
+        "TestKeyMismatchDetection",
+        "getTestStorageConfig",
+        "TestConflictResolution",
+        "getTestPassphrase",
+        "getEnvOrDefault",
+        "verifyKeyMatchesRemote",
+        "cleanupRemote",
+        "setupTestConfig",
+        "Error",
+        "TestBasicCrossDeviceSync"
+      ],
+      "classes": [
+        "keyMismatchError"
+      ],
+      "content_preview": "//go:build integration\n\n// Package integration provides cross-device integration tests for claude-sync.\n// These tests require real R2 credentials and simulate multiple devices using temp directories.\n//\n// To run these tests:\n//\n//\tsource integration/.env\n//\tgo test -tags=integration -v ./integration/...\npackage integration\n\nimport (\n\t\"context\"\n\t\"crypto/sha256\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n\t\"github.com/tawanorg/claude-sync/inte"
+    },
+    "docs/architecture.md": {
+      "path": "docs/architecture.md",
+      "mtime": 1776288017.1254916,
+      "size": 14126,
+      "hash": "270b0edfe0e02b80",
+      "language": "Markdown",
+      "lines": 444,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nlayout: default\ntitle: Architecture\n---\n\n# Architecture\n\n[Home](./index) | [How It Works](./how-it-works) | [Security](./security)\n\n---\n\n## System Overview\n\nClaude Sync follows a **layered architecture** with a pluggable storage abstraction:\n\n```\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502                    CLI Layer                             \u2502\n\u2502         cmd/claude-sync/main.go (~1500 lines)           \u2502\n\u2502                                                          \u2502\n\u2502  Comm"
+    },
+    "docs/how-it-works.md": {
+      "path": "docs/how-it-works.md",
+      "mtime": 1776288017.1255846,
+      "size": 21381,
+      "hash": "b21812dc388d8c85",
+      "language": "Markdown",
+      "lines": 547,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nlayout: default\ntitle: How It Works\n---\n\n# How It Works\n\n[Home](./index) | [Architecture](./architecture) | [Security](./security)\n\n---\n\n## Initialization\n\nWhen you run `claude-sync init`, an interactive wizard guides you through setup:\n\n### Step 1: Select Storage Provider\n\n```\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502  ? Choose your cloud storage provider:                  \u2502\n\u2502  > Cloudflare R2 (recommended - free tier: 10GB)        \u2502\n\u2502    Amazon S3                       "
+    },
+    "docs/index.md": {
+      "path": "docs/index.md",
+      "mtime": 1776288017.1256995,
+      "size": 6995,
+      "hash": "517895ac0670e1b2",
+      "language": "Markdown",
+      "lines": 246,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nlayout: default\ntitle: Claude Sync - Technical Documentation\n---\n\n# Claude Sync\n\n**Encrypted cross-device synchronization for Claude Code sessions**\n\n[Architecture](./architecture) | [How It Works](./how-it-works) | [Security](./security) | [GitHub](https://github.com/tawanorg/claude-sync)\n\n---\n\n## What is Claude Sync?\n\nClaude Sync is a CLI tool that enables seamless synchronization of [Claude Code](https://claude.ai/claude-code) conversations, project sessions, and configurations across mul"
+    },
+    "docs/_config.yml": {
+      "path": "docs/_config.yml",
+      "mtime": 1776288017.1253817,
+      "size": 406,
+      "hash": "fe2aa474ccad154e",
+      "language": "YAML",
+      "lines": 19,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "title: Claude Sync\ndescription: Encrypted cross-device sync for Claude Code sessions\nremote_theme: pages-themes/minimal@v0.2.0\nplugins:\n  - jekyll-remote-theme\n\n# Navigation\nnav:\n  - title: Home\n    url: /\n  - title: Architecture\n    url: /architecture\n  - title: How It Works\n    url: /how-it-works\n  - title: Security\n    url: /security\n  - title: GitHub\n    url: https://github.com/tawanorg/claude-sync\n"
+    },
+    "docs/security.md": {
+      "path": "docs/security.md",
+      "mtime": 1776288017.1258106,
+      "size": 14580,
+      "hash": "3b2f53a96425e51b",
+      "language": "Markdown",
+      "lines": 425,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nlayout: default\ntitle: Security\n---\n\n# Security\n\n[Home](./index) | [Architecture](./architecture) | [How It Works](./how-it-works)\n\n---\n\n## Security Goals\n\nClaude Sync is designed with the following security objectives:\n\n| Goal | Implementation |\n|------|----------------|\n| **Confidentiality** | End-to-end encryption with age (X25519 + ChaCha20-Poly1305) |\n| **Integrity** | AEAD encryption (Poly1305 MAC) detects tampering |\n| **Key Portability** | Deterministic key derivation from passphrase"
+    },
+    ".codebase-intelligence/codebase_index.json": {
+      "path": ".codebase-intelligence/codebase_index.json",
+      "mtime": 1778770274.578117,
+      "size": 108496,
+      "hash": "a8484eb1a006fa92",
+      "language": "JSON",
+      "lines": 2923,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"root\": \"/Users/merv/claude-sync\",\n  \"created_at\": 1778770274.554911,\n  \"updated_at\": 1778770274.554912,\n  \"files\": {\n    \".releaserc.json\": {\n      \"path\": \".releaserc.json\",\n      \"mtime\": 1776288017.116328,\n      \"size\": 858,\n      \"hash\": \"fafb9d2cf359f20e\",\n      \"language\": \"JSON\",\n      \"lines\": 24,\n      \"imports\": [],\n      \"exports\": [],\n      \"functions\": [],\n      \"classes\": [],\n      \"content_preview\": \"{\\n  \\\"branches\\\": [\\\"main\\\"],\\n  \\\"plugins\\\": [\\n    \\\"@semantic-release/co"
+    },
+    "scripts/publish-npm.sh": {
+      "path": "scripts/publish-npm.sh",
+      "mtime": 1776288017.1290863,
+      "size": 2395,
+      "hash": "b2e0a041c70c7eb5",
+      "language": "Shell",
+      "lines": 77,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "#!/bin/bash\nset -euo pipefail\n\n# Publish platform-specific npm packages for claude-sync\n# Usage: ./scripts/publish-npm.sh <version>\n# Expects binaries in bin/ directory (from build-all or CI artifacts)\n\nVERSION=\"${1:?Usage: publish-npm.sh <version>}\"\nVERSION=\"${VERSION#v}\" # Strip v prefix\n\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nROOT_DIR=\"$(dirname \"$SCRIPT_DIR\")\"\nNPM_DIR=\"$ROOT_DIR/npm\"\n\n# Map: npm platform \u2192 Go binary name\ndeclare -A PLATFORM_MAP=(\n  [\"darwin-arm64\"]=\"claude-sync-darwin-a"
+    },
+    ".claude-plugin/marketplace.json": {
+      "path": ".claude-plugin/marketplace.json",
+      "mtime": 1776288017.1156797,
+      "size": 263,
+      "hash": "8c9f60563cf25332",
+      "language": "JSON",
+      "lines": 14,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"claude-sync\",\n  \"owner\": {\n    \"name\": \"tawanorg\"\n  },\n  \"plugins\": [\n    {\n      \"name\": \"claude-sync\",\n      \"description\": \"Sync Claude Code sessions across devices with encrypted cloud storage\",\n      \"source\": \"./claude-code-plugin\"\n    }\n  ]\n}\n"
+    },
+    "claude-code-plugin/README.md": {
+      "path": "claude-code-plugin/README.md",
+      "mtime": 1776288017.1240423,
+      "size": 5829,
+      "hash": "e9b6e474492de255",
+      "language": "Markdown",
+      "lines": 221,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "# Claude Sync Plugin for Claude Code\n\nSync your Claude Code sessions across devices with encrypted cloud storage.\n\n## Features\n\n- **Cross-device sync**: Continue Claude Code conversations on any laptop\n- **Interactive setup**: Natural conversation-based configuration via `/sync-init`\n- **Auto-sync**: Automatically pushes changes on session end or after 5 minutes idle\n- **End-to-end encryption**: All files encrypted with age before upload\n- **Multi-provider**: Supports Cloudflare R2, AWS S3, and "
+    },
+    "npm/win32-arm64/package.json": {
+      "path": "npm/win32-arm64/package.json",
+      "mtime": 1776288017.1288528,
+      "size": 347,
+      "hash": "bc3e8fb53c78fcc8",
+      "language": "JSON",
+      "lines": 16,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync-win32-arm64\",\n  \"version\": \"0.4.0\",\n  \"description\": \"claude-sync binary for Windows ARM64\",\n  \"os\": [\"win32\"],\n  \"cpu\": [\"arm64\"],\n  \"bin\": {\n    \"claude-sync\": \"claude-sync.exe\"\n  },\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.git\"\n  }\n}\n"
+    },
+    "npm/linux-arm64/package.json": {
+      "path": "npm/linux-arm64/package.json",
+      "mtime": 1776288017.1286848,
+      "size": 341,
+      "hash": "ab715d16051cbf2e",
+      "language": "JSON",
+      "lines": 16,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync-linux-arm64\",\n  \"version\": \"0.4.0\",\n  \"description\": \"claude-sync binary for Linux ARM64\",\n  \"os\": [\"linux\"],\n  \"cpu\": [\"arm64\"],\n  \"bin\": {\n    \"claude-sync\": \"claude-sync\"\n  },\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.git\"\n  }\n}\n"
+    },
+    "npm/darwin-x64/package.json": {
+      "path": "npm/darwin-x64/package.json",
+      "mtime": 1776288017.1286001,
+      "size": 337,
+      "hash": "9149b5f0ab1b1ce6",
+      "language": "JSON",
+      "lines": 16,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync-darwin-x64\",\n  \"version\": \"0.4.0\",\n  \"description\": \"claude-sync binary for macOS x64\",\n  \"os\": [\"darwin\"],\n  \"cpu\": [\"x64\"],\n  \"bin\": {\n    \"claude-sync\": \"claude-sync\"\n  },\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.git\"\n  }\n}\n"
+    },
+    "npm/win32-x64/package.json": {
+      "path": "npm/win32-x64/package.json",
+      "mtime": 1776288017.1289382,
+      "size": 341,
+      "hash": "fdd1ab892ba27a39",
+      "language": "JSON",
+      "lines": 16,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync-win32-x64\",\n  \"version\": \"0.4.0\",\n  \"description\": \"claude-sync binary for Windows x64\",\n  \"os\": [\"win32\"],\n  \"cpu\": [\"x64\"],\n  \"bin\": {\n    \"claude-sync\": \"claude-sync.exe\"\n  },\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.git\"\n  }\n}\n"
+    },
+    "npm/darwin-arm64/package.json": {
+      "path": "npm/darwin-arm64/package.json",
+      "mtime": 1776288017.1285138,
+      "size": 343,
+      "hash": "17c6e6f098b2a834",
+      "language": "JSON",
+      "lines": 16,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync-darwin-arm64\",\n  \"version\": \"0.4.0\",\n  \"description\": \"claude-sync binary for macOS ARM64\",\n  \"os\": [\"darwin\"],\n  \"cpu\": [\"arm64\"],\n  \"bin\": {\n    \"claude-sync\": \"claude-sync\"\n  },\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.git\"\n  }\n}\n"
+    },
+    "npm/linux-x64/package.json": {
+      "path": "npm/linux-x64/package.json",
+      "mtime": 1776288017.1287696,
+      "size": 335,
+      "hash": "c3c8a937044a7267",
+      "language": "JSON",
+      "lines": 16,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"@tawandotorg/claude-sync-linux-x64\",\n  \"version\": \"0.4.0\",\n  \"description\": \"claude-sync binary for Linux x64\",\n  \"os\": [\"linux\"],\n  \"cpu\": [\"x64\"],\n  \"bin\": {\n    \"claude-sync\": \"claude-sync\"\n  },\n  \"license\": \"MIT\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/tawanorg/claude-sync.git\"\n  }\n}\n"
+    },
+    "claude-code-plugin/hooks/hooks.json": {
+      "path": "claude-code-plugin/hooks/hooks.json",
+      "mtime": 1776288017.1247687,
+      "size": 192,
+      "hash": "5748c879b274ef2c",
+      "language": "JSON",
+      "lines": 12,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"command\": \"bash {{plugin_dir}}/scripts/check-config.sh\",\n        \"additionalContext\": true,\n        \"blocking\": false\n      }\n    ]\n  }\n}\n"
+    },
+    "claude-code-plugin/scripts/generate-key.py": {
+      "path": "claude-code-plugin/scripts/generate-key.py",
+      "mtime": 1776288017.124931,
+      "size": 4016,
+      "hash": "09967bbd2145aa82",
+      "language": "Python",
+      "lines": 136,
+      "imports": [
+        "argon2",
+        "os",
+        "hashlib",
+        "sys"
+      ],
+      "exports": [],
+      "functions": [
+        "bech32_create_checksum",
+        "convert_bits",
+        "bech32_polymod",
+        "bech32_encode",
+        "bech32_hrp_expand",
+        "generate_key_from_passphrase",
+        "main"
+      ],
+      "classes": [],
+      "content_preview": "#!/usr/bin/env python3\n\"\"\"\nGenerate age encryption key from passphrase.\nMatches the Go implementation in claude-sync for cross-device compatibility.\n\nUsage: python3 generate-key.py <passphrase> <output_path>\n\"\"\"\n\nimport sys\nimport os\nimport hashlib\n\ntry:\n    from argon2.low_level import hash_secret_raw, Type\nexcept ImportError:\n    print(\"Error: argon2-cffi package required. Install with: pip3 install argon2-cffi\", file=sys.stderr)\n    sys.exit(1)\n\n\ndef bech32_polymod(values: list[int]) -> int:\n"
+    },
+    "claude-code-plugin/scripts/check-config.sh": {
+      "path": "claude-code-plugin/scripts/check-config.sh",
+      "mtime": 1776288017.1248636,
+      "size": 865,
+      "hash": "3577c850729100b0",
+      "language": "Shell",
+      "lines": 28,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "#!/bin/bash\n# Check if claude-sync is configured and return status as additionalContext\n\nCONFIG_FILE=\"$HOME/.claude-sync/config.yaml\"\nKEY_FILE=\"$HOME/.claude-sync/age-key.txt\"\n\nif ! command -v claude-sync &> /dev/null; then\n    echo \"claude-sync is not installed. Install with: npm install -g @tawandotorg/claude-sync\"\n    exit 0\nfi\n\nif [ ! -f \"$CONFIG_FILE\" ]; then\n    echo \"claude-sync is not configured. Run /sync-init to set up cross-device sync.\"\n    exit 0\nfi\n\nif [ ! -f \"$KEY_FILE\" ]; then\n  "
+    },
+    "claude-code-plugin/.claude-plugin/plugin.json": {
+      "path": "claude-code-plugin/.claude-plugin/plugin.json",
+      "mtime": 1776288017.1239648,
+      "size": 160,
+      "hash": "6f717a6ee5e3463d",
+      "language": "JSON",
+      "lines": 8,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "{\n  \"name\": \"claude-sync\",\n  \"description\": \"Sync Claude Code sessions across devices with encrypted cloud storage\",\n  \"author\": {\n    \"name\": \"tawanorg\"\n  }\n}\n"
+    },
+    "claude-code-plugin/commands/sync-init.md": {
+      "path": "claude-code-plugin/commands/sync-init.md",
+      "mtime": 1776288017.1243513,
+      "size": 4617,
+      "hash": "65c85c61fa6c90f2",
+      "language": "Markdown",
+      "lines": 185,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-init\ndescription: Configure claude-sync for cross-device session synchronization\n---\n\n# Claude Sync Configuration Wizard\n\nYou are helping the user set up claude-sync for cross-device synchronization of their Claude Code sessions.\n\n## Mode Detection\n\nFirst, check the current state to determine which mode to use:\n\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"has_config\" || echo \"no_config\"\ntest -f ~/.claude-sync/age-key.txt && echo \"has_key\" || echo \"no_key\"\n```\n\n### Passphra"
+    },
+    "claude-code-plugin/commands/sync-help.md": {
+      "path": "claude-code-plugin/commands/sync-help.md",
+      "mtime": 1776288017.1242704,
+      "size": 2599,
+      "hash": "16714a647a83006b",
+      "language": "Markdown",
+      "lines": 96,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-help\ndescription: Show claude-sync commands and options\n---\n\n# Claude Sync Help\n\nDisplay available commands and their options.\n\n## Commands Overview\n\n| Command | Description |\n|---------|-------------|\n| `/sync-init` | Configure cloud storage and encryption |\n| `/sync-push` | Upload local changes to cloud |\n| `/sync-pull` | Download remote changes |\n| `/sync-status` | Show pending local changes |\n| `/sync-diff` | Show differences between local and remote |\n| `/sync-conflicts` | Li"
+    },
+    "claude-code-plugin/commands/sync-update.md": {
+      "path": "claude-code-plugin/commands/sync-update.md",
+      "mtime": 1776288017.1246789,
+      "size": 923,
+      "hash": "fcfba018a153f2f4",
+      "language": "Markdown",
+      "lines": 46,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-update\ndescription: Update claude-sync CLI to the latest version\n---\n\n# Sync Update\n\nCheck for and install updates to the claude-sync CLI.\n\n## Check for Updates\n\nFirst check if an update is available:\n```bash\nclaude-sync update --check\n```\n\n## Install Update\n\nIf an update is available and user wants to install:\n```bash\nclaude-sync update\n```\n\n## Report Results\n\nAfter the check/update:\n- Report current version and latest available\n- If update was installed, remind user to restart t"
+    },
+    "claude-code-plugin/commands/sync-push.md": {
+      "path": "claude-code-plugin/commands/sync-push.md",
+      "mtime": 1776288017.1244915,
+      "size": 673,
+      "hash": "9c83bb2de56809c0",
+      "language": "Markdown",
+      "lines": 39,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-push\ndescription: Push local Claude Code sessions to cloud storage\n---\n\n# Sync Push\n\nPush local changes to cloud storage.\n\n## Check Configuration\n\nFirst verify claude-sync is configured:\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"configured\" || echo \"not configured\"\n```\n\nIf not configured, tell the user to run `/sync-init` first.\n\n## Show Pending Changes\n\nShow what will be uploaded:\n```bash\nclaude-sync status\n```\n\n## Push Changes\n\nExecute the push:\n```bash\nclaude-sync pus"
+    },
+    "claude-code-plugin/commands/sync-reset.md": {
+      "path": "claude-code-plugin/commands/sync-reset.md",
+      "mtime": 1776288017.1245534,
+      "size": 1336,
+      "hash": "511678fdc93d97b3",
+      "language": "Markdown",
+      "lines": 56,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-reset\ndescription: Reset claude-sync configuration and optionally clear data\n---\n\n# Sync Reset\n\nReset claude-sync configuration. Use this if you forgot your passphrase or want to start fresh.\n\n## Check Current State\n\nFirst check if claude-sync is configured:\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"configured\" || echo \"not configured\"\n```\n\n## Confirm with User\n\nUse `AskUserQuestion` to confirm the reset and ask what to clear:\n\n**Options:**\n1. **Config only** - Just dele"
+    },
+    "claude-code-plugin/commands/sync-diff.md": {
+      "path": "claude-code-plugin/commands/sync-diff.md",
+      "mtime": 1776288017.1242006,
+      "size": 820,
+      "hash": "76fd597170462f9d",
+      "language": "Markdown",
+      "lines": 37,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-diff\ndescription: Show differences between local and remote Claude Code sessions\n---\n\n# Sync Diff\n\nShow detailed differences between local and remote files.\n\n## Check Configuration\n\nFirst verify claude-sync is configured:\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"configured\" || echo \"not configured\"\n```\n\nIf not configured, tell the user to run `/sync-init` first.\n\n## Show Differences\n\nGet the diff:\n```bash\nclaude-sync diff\n```\n\n## Report Results\n\nSummarize the difference"
+    },
+    "claude-code-plugin/commands/sync-conflicts.md": {
+      "path": "claude-code-plugin/commands/sync-conflicts.md",
+      "mtime": 1776288017.1241355,
+      "size": 1416,
+      "hash": "933407afe0ee673d",
+      "language": "Markdown",
+      "lines": 61,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-conflicts\ndescription: List and resolve sync conflicts\n---\n\n# Sync Conflicts\n\nFind and resolve conflicts from sync operations. When both local and remote files change, the remote version is saved as a `.conflict` file.\n\n## Check Configuration\n\nFirst verify claude-sync is configured:\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"configured\" || echo \"not configured\"\n```\n\nIf not configured, tell the user to run `/sync-init` first.\n\n## List Conflicts\n\nShow all conflict files:\n``"
+    },
+    "claude-code-plugin/commands/sync-status.md": {
+      "path": "claude-code-plugin/commands/sync-status.md",
+      "mtime": 1776288017.1246164,
+      "size": 806,
+      "hash": "4ef7877229658f00",
+      "language": "Markdown",
+      "lines": 37,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-status\ndescription: Show pending local changes for claude-sync\n---\n\n# Sync Status\n\nShow the current sync status and any pending local changes.\n\n## Check Configuration\n\nFirst verify claude-sync is configured:\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"configured\" || echo \"not configured\"\n```\n\nIf not configured, tell the user to run `/sync-init` first.\n\n## Show Status\n\nGet the current status:\n```bash\nclaude-sync status\n```\n\n## Report Results\n\nSummarize the status:\n- Number "
+    },
+    "claude-code-plugin/commands/sync-pull.md": {
+      "path": "claude-code-plugin/commands/sync-pull.md",
+      "mtime": 1776288017.1244197,
+      "size": 1092,
+      "hash": "27ef67db28069f81",
+      "language": "Markdown",
+      "lines": 52,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "---\nname: sync-pull\ndescription: Pull Claude Code sessions from cloud storage\n---\n\n# Sync Pull\n\nDownload remote changes from cloud storage.\n\n## Check Configuration\n\nFirst verify claude-sync is configured:\n```bash\ntest -f ~/.claude-sync/config.yaml && echo \"configured\" || echo \"not configured\"\n```\n\nIf not configured, tell the user to run `/sync-init` first.\n\n## Preview Changes (Recommended)\n\nFirst show what would change:\n```bash\nclaude-sync pull --dry-run\n```\n\n## Confirm with User\n\nUse `AskUserQu"
+    },
+    ".github/workflows/release.yml": {
+      "path": ".github/workflows/release.yml",
+      "mtime": 1776288017.116118,
+      "size": 3370,
+      "hash": "364fadaddd620b6c",
+      "language": "YAML",
+      "lines": 93,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "name: Release\n\non:\n  push:\n    branches: [main]\n\npermissions:\n  contents: write\n  issues: write\n  pull-requests: write\n  packages: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n          token: ${{ secrets.GITHUB_TOKEN }}\n\n      - name: Setup Go\n        uses: actions/setup-go@v5\n        with:\n          go-version: '1.21'\n\n      - name: Setup Node.js\n        uses: actions/setup-node@v4\n        with:\n         "
+    },
+    ".github/workflows/build-release.yml": {
+      "path": ".github/workflows/build-release.yml",
+      "mtime": 1776288017.1159663,
+      "size": 1805,
+      "hash": "8581ea680db738b2",
+      "language": "YAML",
+      "lines": 71,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "name: Build & Release\n\non:\n  workflow_dispatch:\n    inputs:\n      version:\n        description: 'Release version (e.g. v1.2.2)'\n        required: true\n\npermissions:\n  contents: write\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        include:\n          - goos: windows\n            goarch: amd64\n            ext: .exe\n          - goos: windows\n            goarch: arm64\n            ext: .exe\n          - goos: darwin\n            goarch: amd64\n            ext: \"\"\n          "
+    },
+    ".github/workflows/ci.yml": {
+      "path": ".github/workflows/ci.yml",
+      "mtime": 1776288017.116041,
+      "size": 1684,
+      "hash": "508babc73d378a25",
+      "language": "YAML",
+      "lines": 71,
+      "imports": [],
+      "exports": [],
+      "functions": [],
+      "classes": [],
+      "content_preview": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n\n      - name: Setup Go\n        uses: actions/setup-go@v5\n        with:\n          go-version: '1.21'\n\n      - name: Download dependencies\n        run: go mod download\n\n      - name: Run all tests\n        run: go test -v ./...\n\n      - name: Run coverage on library packages\n        run: |\n          go test -coverprofile=coverage.out"
+    },
+    "internal/crypto/encrypt_test.go": {
+      "path": "internal/crypto/encrypt_test.go",
+      "mtime": 1776288017.1269026,
+      "size": 10566,
+      "hash": "382772bc976ad6bf",
+      "language": "Go",
+      "lines": 418,
+      "imports": [
+        "testing",
+        "os",
+        "filepath",
+        "age",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "TestValidatePassphraseStrength",
+        "TestEncodeAgeIdentity",
+        "TestNewEncryptor",
+        "TestNewEncryptorWithPassphraseKey",
+        "TestEncryptDecryptWithPassphraseKey",
+        "TestGenerateKeyFromPassphrase",
+        "TestGenerateKey",
+        "TestGenerateKeyFromPassphraseDifferentPassphrases",
+        "min",
+        "TestGenerateKeyFromPassphraseDeterministic",
+        "TestKeyExists",
+        "TestEncryptDecryptLargeData",
+        "TestEncryptDecrypt"
+      ],
+      "classes": [],
+      "content_preview": "package crypto\n\nimport (\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"filippo.io/age\"\n)\n\nfunc TestGenerateKey(t *testing.T) {\n\ttmpDir := t.TempDir()\n\tkeyPath := filepath.Join(tmpDir, \"age-key.txt\")\n\n\terr := GenerateKey(keyPath)\n\tif err != nil {\n\t\tt.Fatalf(\"GenerateKey failed: %v\", err)\n\t}\n\n\t// Verify key file exists\n\tif !KeyExists(keyPath) {\n\t\tt.Fatal(\"Key file was not created\")\n\t}\n\n\t// Read and validate the key\n\tdata, err := os.ReadFile(keyPath)\n\tif err != nil {\n\t\tt.Fatalf(\"Failed to read ke"
+    },
+    "internal/crypto/encrypt.go": {
+      "path": "internal/crypto/encrypt.go",
+      "mtime": 1776288017.1268117,
+      "size": 4193,
+      "hash": "905c0948c0a50dc4",
+      "language": "Go",
+      "lines": 161,
+      "imports": [
+        "bytes",
+        "strings",
+        "os",
+        "fmt",
+        "io",
+        "bech32",
+        "argon2",
+        "age",
+        "curve25519",
+        "sha256"
+      ],
+      "exports": [],
+      "functions": [
+        "Decrypt",
+        "GenerateKey",
+        "GenerateKeyFromPassphrase",
+        "encodeAgeIdentity",
+        "ValidatePassphraseStrength",
+        "Encrypt",
+        "NewEncryptor",
+        "KeyExists",
+        "PublicKey"
+      ],
+      "classes": [
+        "Encryptor"
+      ],
+      "content_preview": "package crypto\n\nimport (\n\t\"bytes\"\n\t\"crypto/sha256\"\n\t\"fmt\"\n\t\"io\"\n\t\"os\"\n\t\"strings\"\n\n\t\"filippo.io/age\"\n\t\"github.com/btcsuite/btcd/btcutil/bech32\"\n\t\"golang.org/x/crypto/argon2\"\n\t\"golang.org/x/crypto/curve25519\"\n)\n\ntype Encryptor struct {\n\tidentity  *age.X25519Identity\n\trecipient *age.X25519Recipient\n}\n\nfunc NewEncryptor(keyPath string) (*Encryptor, error) {\n\tdata, err := os.ReadFile(keyPath)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"failed to read age key: %w\", err)\n\t}\n\n\t// Parse the identity (priv"
+    },
+    "internal/util/format_test.go": {
+      "path": "internal/util/format_test.go",
+      "mtime": 1776288017.1283925,
+      "size": 2971,
+      "hash": "22eb3fb01b691882",
+      "language": "Go",
+      "lines": 109,
+      "imports": [
+        "runtime",
+        "testing"
+      ],
+      "exports": [],
+      "functions": [
+        "TestCompareVersions",
+        "TestFormatSize",
+        "TestTruncatePath",
+        "TestGetBinaryName"
+      ],
+      "classes": [],
+      "content_preview": "package util\n\nimport (\n\t\"runtime\"\n\t\"testing\"\n)\n\nfunc TestTruncatePath(t *testing.T) {\n\ttests := []struct {\n\t\tname     string\n\t\tpath     string\n\t\tmaxLen   int\n\t\texpected string\n\t}{\n\t\t{\"short path unchanged\", \"/a/b\", 10, \"/a/b\"},\n\t\t{\"exact length unchanged\", \"12345\", 5, \"12345\"},\n\t\t{\"long path truncated\", \"/very/long/path/to/file.txt\", 15, \".../to/file.txt\"},\n\t\t{\"minimal truncation\", \"abcdef\", 5, \"...ef\"},\n\t\t{\"single char over\", \"abcdef\", 5, \"...ef\"},\n\t\t{\"empty path\", \"\", 5, \"\"},\n\t\t{\"maxLen equals"
+    },
+    "internal/util/format.go": {
+      "path": "internal/util/format.go",
+      "mtime": 1776288017.128326,
+      "size": 1495,
+      "hash": "b0b1614339f424ce",
+      "language": "Go",
+      "lines": 75,
+      "imports": [
+        "runtime",
+        "fmt",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "TruncatePath",
+        "GetBinaryName",
+        "CompareVersions",
+        "FormatSize"
+      ],
+      "classes": [],
+      "content_preview": "package util\n\nimport (\n\t\"fmt\"\n\t\"runtime\"\n\t\"strings\"\n)\n\n// TruncatePath shortens a file path to maxLen characters,\n// prefixing with \"...\" if truncation is needed.\nfunc TruncatePath(path string, maxLen int) string {\n\tif len(path) <= maxLen {\n\t\treturn path\n\t}\n\treturn \"...\" + path[len(path)-maxLen+3:]\n}\n\n// FormatSize returns a human-readable string for a byte count.\nfunc FormatSize(size int64) string {\n\tconst (\n\t\tKB = 1024\n\t\tMB = KB * 1024\n\t\tGB = MB * 1024\n\t)\n\n\tswitch {\n\tcase size >= GB:\n\t\treturn "
+    },
+    "internal/config/config.go": {
+      "path": "internal/config/config.go",
+      "mtime": 1776288017.1265826,
+      "size": 6145,
+      "hash": "cf45652d784890a6",
+      "language": "Go",
+      "lines": 226,
+      "imports": [
+        "storage",
+        "os",
+        "fmt",
+        "filepath",
+        "yaml.v3",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "ConfigFilePath",
+        "Load",
+        "AgeKeyFilePath",
+        "Exists",
+        "ClaudeDir",
+        "ConfigDirPath",
+        "Save",
+        "StateFilePath",
+        "IsLegacyConfig",
+        "ClaudeJSONPath",
+        "IsExcluded",
+        "GetStorageConfig"
+      ],
+      "classes": [
+        "Config"
+      ],
+      "content_preview": "package config\n\nimport (\n\t\"fmt\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n\t\"gopkg.in/yaml.v3\"\n)\n\nconst (\n\tConfigDir  = \".claude-sync\"\n\tConfigFile = \"config.yaml\"\n\tStateFile  = \"state.json\"\n\tAgeKeyFile = \"age-key.txt\"\n\n\t// MCPRemoteKey is the remote storage key for synced MCP server configs.\n\t// The _external/ prefix separates it from ~/.claude/-relative files.\n\tMCPRemoteKey = \"_external/mcp-servers.json\"\n)\n\ntype Config struct {\n\t// New storage configu"
+    },
+    "internal/config/config_test.go": {
+      "path": "internal/config/config_test.go",
+      "mtime": 1776288017.1267002,
+      "size": 11022,
+      "hash": "91d8b21efca5f16b",
+      "language": "Go",
+      "lines": 384,
+      "imports": [
+        "storage",
+        "testing",
+        "os",
+        "filepath",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "TestIsLegacyConfig",
+        "TestConfigFilePath",
+        "TestClaudeJSONPath",
+        "TestGetStorageConfig_NewFormat",
+        "TestConfigDirPath",
+        "TestGetStorageConfig_LegacyFormat",
+        "TestConfigSaveAndLoad",
+        "TestSaveAndLoad",
+        "TestClaudeDir",
+        "TestStateFilePath",
+        "TestSyncPaths",
+        "TestAgeKeyFilePath",
+        "TestLoadNotFound",
+        "TestIsExcluded",
+        "TestExists"
+      ],
+      "classes": [],
+      "content_preview": "package config\n\nimport (\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\t\"testing\"\n\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n)\n\nfunc TestConfigDirPath(t *testing.T) {\n\tpath := ConfigDirPath()\n\tif path == \"\" {\n\t\tt.Fatal(\"ConfigDirPath should not return empty string\")\n\t}\n\n\tif !strings.HasSuffix(path, ConfigDir) {\n\t\tt.Errorf(\"ConfigDirPath should end with '%s', got '%s'\", ConfigDir, path)\n\t}\n}\n\nfunc TestConfigFilePath(t *testing.T) {\n\tpath := ConfigFilePath()\n\tif path == \"\" {\n\t\tt.Fatal(\"ConfigFilePat"
+    },
+    "internal/storage/config.go": {
+      "path": "internal/storage/config.go",
+      "mtime": 1776288017.12699,
+      "size": 2595,
+      "hash": "8ec75aef1fffb92d",
+      "language": "Go",
+      "lines": 102,
+      "imports": [
+        "fmt"
+      ],
+      "exports": [],
+      "functions": [
+        "Validate",
+        "validateR2",
+        "validateS3",
+        "GetEndpoint",
+        "validateGCS"
+      ],
+      "classes": [
+        "StorageConfig"
+      ],
+      "content_preview": "package storage\n\nimport (\n\t\"fmt\"\n)\n\n// StorageConfig holds configuration for any storage provider\ntype StorageConfig struct {\n\tProvider Provider `yaml:\"provider\"`\n\tBucket   string   `yaml:\"bucket\"`\n\n\t// R2/S3 common fields\n\tAccessKeyID     string `yaml:\"access_key_id,omitempty\"`\n\tSecretAccessKey string `yaml:\"secret_access_key,omitempty\"`\n\tEndpoint        string `yaml:\"endpoint,omitempty\"`\n\tRegion          string `yaml:\"region,omitempty\"`\n\n\t// R2-specific\n\tAccountID string `yaml:\"account_id,omit"
+    },
+    "internal/storage/storage_test.go": {
+      "path": "internal/storage/storage_test.go",
+      "mtime": 1776288017.1274917,
+      "size": 5561,
+      "hash": "f95be28e89cbc012",
+      "language": "Go",
+      "lines": 228,
+      "imports": [
+        "testing",
+        "fmt",
+        "context"
+      ],
+      "exports": [],
+      "functions": [
+        "TestNew_InvalidConfig",
+        "TestMockStorage_BucketExists_Error",
+        "TestProviderConstants",
+        "TestMockStorage_BucketExists_Success",
+        "Head",
+        "Upload",
+        "Download",
+        "TestMockStorage_BucketExists_NotFound",
+        "List",
+        "BucketExists",
+        "TestMockStorage_Interface",
+        "Delete",
+        "DeleteBatch"
+      ],
+      "classes": [
+        "MockStorage"
+      ],
+      "content_preview": "package storage\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"testing\"\n)\n\n// MockStorage implements Storage interface for testing\ntype MockStorage struct {\n\tUploadFunc       func(ctx context.Context, key string, data []byte) error\n\tDownloadFunc     func(ctx context.Context, key string) ([]byte, error)\n\tDeleteFunc       func(ctx context.Context, key string) error\n\tDeleteBatchFunc  func(ctx context.Context, keys []string) error\n\tListFunc         func(ctx context.Context, prefix string) ([]ObjectInfo, error)\n\tHead"
+    },
+    "internal/storage/storage.go": {
+      "path": "internal/storage/storage.go",
+      "mtime": 1776288017.12742,
+      "size": 2083,
+      "hash": "911fae9a6eda8801",
+      "language": "Go",
+      "lines": 76,
+      "imports": [
+        "time",
+        "fmt",
+        "context"
+      ],
+      "exports": [],
+      "functions": [
+        "New"
+      ],
+      "classes": [
+        "Storage",
+        "ObjectInfo"
+      ],
+      "content_preview": "package storage\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"time\"\n)\n\n// Provider represents a storage provider type\ntype Provider string\n\nconst (\n\tProviderR2  Provider = \"r2\"\n\tProviderS3  Provider = \"s3\"\n\tProviderGCS Provider = \"gcs\"\n)\n\n// ObjectInfo contains metadata about a stored object\ntype ObjectInfo struct {\n\tKey          string\n\tSize         int64\n\tLastModified time.Time\n\tETag         string\n}\n\n// Storage defines the interface for cloud storage operations\ntype Storage interface {\n\t// Upload stores data"
+    },
+    "internal/storage/config_test.go": {
+      "path": "internal/storage/config_test.go",
+      "mtime": 1776288017.1270576,
+      "size": 5518,
+      "hash": "906643ce1f53017c",
+      "language": "Go",
+      "lines": 250,
+      "imports": [
+        "testing"
+      ],
+      "exports": [],
+      "functions": [
+        "TestStorageConfig_GetEndpoint",
+        "contains",
+        "findSubstring",
+        "TestStorageConfig_Validate"
+      ],
+      "classes": [],
+      "content_preview": "package storage\n\nimport (\n\t\"testing\"\n)\n\nfunc TestStorageConfig_Validate(t *testing.T) {\n\ttests := []struct {\n\t\tname    string\n\t\tconfig  StorageConfig\n\t\twantErr bool\n\t\terrMsg  string\n\t}{\n\t\t{\n\t\t\tname:    \"empty config\",\n\t\t\tconfig:  StorageConfig{},\n\t\t\twantErr: true,\n\t\t\terrMsg:  \"bucket is required\",\n\t\t},\n\t\t{\n\t\t\tname: \"missing provider\",\n\t\t\tconfig: StorageConfig{\n\t\t\t\tBucket: \"test-bucket\",\n\t\t\t},\n\t\t\twantErr: true,\n\t\t\terrMsg:  \"provider is required\",\n\t\t},\n\t\t{\n\t\t\tname: \"invalid provider\",\n\t\t\tconfig: S"
+    },
+    "internal/sync/mcp_test.go": {
+      "path": "internal/sync/mcp_test.go",
+      "mtime": 1776288017.127703,
+      "size": 12074,
+      "hash": "2417747b73f5c46b",
+      "language": "Go",
+      "lines": 439,
+      "imports": [
+        "os",
+        "testing",
+        "filepath",
+        "json"
+      ],
+      "exports": [],
+      "functions": [
+        "TestMergeMCPServers_NoBaseline_Conflict",
+        "TestWriteMCPServers_CreatesNewFile",
+        "TestReadMCPServers_NoMCPKey",
+        "TestMergeMCPServers_KeepLocalOnly",
+        "TestWriteMCPServers_PreservesOtherKeys",
+        "TestHashMCPServers_Nil",
+        "TestNormalizeMCPPaths_EmptyHomeDir",
+        "TestMergeMCPServers_KeepLocalChanged",
+        "TestMergeMCPServers_NoBaseline_SameValue",
+        "TestMergeMCPServers_AddFromRemote",
+        "TestNormalizeMCPPaths",
+        "TestMergeMCPServers_LocalDeletion",
+        "TestMergeMCPServers_RemoteDeletion",
+        "TestHashMCPServers",
+        "TestMergeMCPServers_ConflictBothChanged",
+        "TestNormalizeResolveRoundTrip",
+        "TestResolveMCPPaths",
+        "TestMergeMCPServers_BothChangedIdentically",
+        "TestReadMCPServers",
+        "TestMergeMCPServers_UpdateFromRemote",
+        "TestMCPServerEqual"
+      ],
+      "classes": [],
+      "content_preview": "package sync\n\nimport (\n\t\"encoding/json\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"testing\"\n)\n\nfunc TestReadMCPServers(t *testing.T) {\n\tdir := t.TempDir()\n\tpath := filepath.Join(dir, \".claude.json\")\n\n\t// Test missing file returns nil\n\tservers, err := ReadMCPServers(path)\n\tif err != nil {\n\t\tt.Fatalf(\"expected no error for missing file, got: %v\", err)\n\t}\n\tif servers != nil {\n\t\tt.Fatal(\"expected nil servers for missing file\")\n\t}\n\n\t// Test file with mcpServers\n\tcontent := `{\n  \"numStartups\": 5,\n  \"mcpServers\": {\n    "
+    },
+    "internal/sync/sync.go": {
+      "path": "internal/sync/sync.go",
+      "mtime": 1778769344.036603,
+      "size": 25450,
+      "hash": "362cb2a2f2aea02a",
+      "language": "Go",
+      "lines": 963,
+      "imports": [
+        "bytes",
+        "time",
+        "storage",
+        "s3",
+        "os",
+        "config",
+        "r2",
+        "fmt",
+        "context",
+        "io",
+        "filepath",
+        "json",
+        "crypto",
+        "gzip",
+        "gcs",
+        "atomic",
+        "sync",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "PullMCP",
+        "Push",
+        "log",
+        "GetState",
+        "claudeJSONPath",
+        "isExcluded",
+        "gzipCompress",
+        "SetProgressFunc",
+        "remoteKey",
+        "Diff",
+        "HasState",
+        "localPath",
+        "isGzipped",
+        "uploadFile",
+        "MCPStatus",
+        "Pull",
+        "downloadFile",
+        "PreviewPull",
+        "handleConflict",
+        "PushMCP",
+        "progress",
+        "gzipDecompress",
+        "NewSyncer",
+        "NewSyncerWith",
+        "Status"
+      ],
+      "classes": [
+        "PullPreview",
+        "Syncer",
+        "ProgressEvent",
+        "FilePreview",
+        "SyncResult",
+        "MCPStatusResult",
+        "DiffEntry"
+      ],
+      "content_preview": "package sync\n\nimport (\n\t\"bytes\"\n\t\"compress/gzip\"\n\t\"context\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"io\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\t\"sync\"\n\t\"sync/atomic\"\n\t\"time\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n\t\"github.com/tawanorg/claude-sync/internal/crypto\"\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n\n\t// Register storage adapters\n\t_ \"github.com/tawanorg/claude-sync/internal/storage/gcs\"\n\t_ \"github.com/tawanorg/claude-sync/internal/storage/r2\"\n\t_ \"github.com/tawanorg/claude-sync/internal"
+    },
+    "internal/sync/sync_test.go": {
+      "path": "internal/sync/sync_test.go",
+      "mtime": 1776288017.1281543,
+      "size": 9004,
+      "hash": "04e6a3bcbcf3a374",
+      "language": "Go",
+      "lines": 316,
+      "imports": [
+        "testing",
+        "os",
+        "config",
+        "filepath",
+        "crypto"
+      ],
+      "exports": [],
+      "functions": [
+        "TestSyncPathsConfig",
+        "TestConfigPaths",
+        "TestSyncStateDetectsAllChangeTypes",
+        "TestFullWorkflowWithLocalState",
+        "TestCrossDeviceSyncWithPassphrase"
+      ],
+      "classes": [],
+      "content_preview": "package sync\n\nimport (\n\t\"os\"\n\t\"path/filepath\"\n\t\"testing\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n\t\"github.com/tawanorg/claude-sync/internal/crypto\"\n)\n\n// TestFullWorkflowWithLocalState tests the sync workflow with real crypto\n// but without actual R2 connection\nfunc TestFullWorkflowWithLocalState(t *testing.T) {\n\t// Set up temporary directories\n\ttmpDir := t.TempDir()\n\tclaudeDir := filepath.Join(tmpDir, \".claude\")\n\tconfigDir := filepath.Join(tmpDir, \".claude-sync\")\n\n\tif err := os.Mkdi"
+    },
+    "internal/sync/pathmap.go": {
+      "path": "internal/sync/pathmap.go",
+      "mtime": 1776367122.8616495,
+      "size": 5872,
+      "hash": "2c6642a756e9525f",
+      "language": "Go",
+      "lines": 176,
+      "imports": [
+        "os",
+        "bytes",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "NormalizeContent",
+        "IsProjectPath",
+        "NewPathMapper",
+        "ResolveContent",
+        "replaceSlugPrefix",
+        "encodePathSegment",
+        "NormalizeRemoteKey",
+        "ResolveLocalPath",
+        "NewPathMapperFromEnv"
+      ],
+      "classes": [
+        "PathMapper"
+      ],
+      "content_preview": "package sync\n\nimport (\n\t\"bytes\"\n\t\"os\"\n\t\"strings\"\n)\n\n// PathMapper handles bidirectional translation between local relative paths\n// (which embed the machine's home directory) and normalized remote keys\n// (which use ${HOME} as a portable placeholder).\n//\n// Claude Code stores per-project data under ~/.claude/projects/ using directory\n// names derived from the project's absolute path. For example:\n//\n//\t/Users/merv/nexura  \u2192  projects/-Users-merv-nexura/\n//\t/Users/alice/nexura \u2192  projects/-Users-"
+    },
+    "internal/sync/mcp.go": {
+      "path": "internal/sync/mcp.go",
+      "mtime": 1776288017.1276164,
+      "size": 9274,
+      "hash": "7e694058215c188f",
+      "language": "Go",
+      "lines": 337,
+      "imports": [
+        "bytes",
+        "hex",
+        "strings",
+        "os",
+        "fmt",
+        "json",
+        "sha256"
+      ],
+      "exports": [],
+      "functions": [
+        "ResolveMCPServers",
+        "NormalizeMCPPaths",
+        "ReadMCPServers",
+        "NormalizeMCPServers",
+        "mcpServerEqual",
+        "hashBytes",
+        "MergeMCPServers",
+        "HashMCPServers",
+        "ResolveMCPPaths",
+        "WriteMCPServers"
+      ],
+      "classes": [
+        "MCPMergeResult",
+        "MCPConflict",
+        "MCPPullResult",
+        "MCPPushResult"
+      ],
+      "content_preview": "package sync\n\nimport (\n\t\"bytes\"\n\t\"crypto/sha256\"\n\t\"encoding/hex\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"os\"\n\t\"strings\"\n)\n\n// MCPServers maps server names to their raw JSON configuration.\n// Using json.RawMessage preserves unknown fields within each server entry.\ntype MCPServers map[string]json.RawMessage\n\n// MCPMergeResult describes the outcome of a three-way merge of MCP server configs.\ntype MCPMergeResult struct {\n\tMerged    MCPServers\n\tAdded     []string // server keys added from remote\n\tUpdated   []strin"
+    },
+    "internal/sync/state_test.go": {
+      "path": "internal/sync/state_test.go",
+      "mtime": 1776288017.1278594,
+      "size": 15626,
+      "hash": "0b33da461fc82ab0",
+      "language": "Go",
+      "lines": 584,
+      "imports": [
+        "time",
+        "testing",
+        "os",
+        "filepath",
+        "json",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "TestSetMCPBaseline_Nil",
+        "TestNewState",
+        "TestIsEmpty",
+        "TestGetLocalFilesWithExclude",
+        "TestGetMCPBaseline_Empty",
+        "TestStateUpdateFile",
+        "TestStateRemoveFile",
+        "TestStateMarkUploaded",
+        "TestHashFile",
+        "TestStateSaveAndLoad",
+        "TestGetLocalFilesSkipsSymlinksInDirectories",
+        "TestDetectChangesWithExclude",
+        "TestSetAndGetMCPBaseline",
+        "TestGetLocalFiles",
+        "TestDetectChanges"
+      ],
+      "classes": [],
+      "content_preview": "package sync\n\nimport (\n\t\"encoding/json\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n)\n\nfunc TestNewState(t *testing.T) {\n\tstate := NewState()\n\n\tif state == nil {\n\t\tt.Fatal(\"NewState returned nil\")\n\t}\n\n\tif state.Files == nil {\n\t\tt.Error(\"Files map should be initialized\")\n\t}\n\n\tif state.DeviceID == \"\" {\n\t\tt.Error(\"DeviceID should be set to hostname\")\n\t}\n}\n\nfunc TestStateUpdateFile(t *testing.T) {\n\tstate := NewState()\n\n\t// Create a temporary file to get real FileInfo\n\ttmpDir := t.TempDir()\n"
+    },
+    "internal/sync/state.go": {
+      "path": "internal/sync/state.go",
+      "mtime": 1776288017.1277716,
+      "size": 7391,
+      "hash": "9b381a1b9edadbd4",
+      "language": "Go",
+      "lines": 313,
+      "imports": [
+        "time",
+        "hex",
+        "os",
+        "config",
+        "fmt",
+        "io",
+        "filepath",
+        "json",
+        "sync",
+        "sha256"
+      ],
+      "exports": [],
+      "functions": [
+        "GetLocalFiles",
+        "HashFile",
+        "NewState",
+        "IsEmpty",
+        "GetMCPBaseline",
+        "Save",
+        "SetMCPBaseline",
+        "RemoveFile",
+        "MarkUploaded",
+        "loadStateFromPath",
+        "UpdateFile",
+        "LoadStateFromDir",
+        "DetectChanges",
+        "LoadState",
+        "GetFile"
+      ],
+      "classes": [
+        "FileChange",
+        "FileState",
+        "SyncState"
+      ],
+      "content_preview": "package sync\n\nimport (\n\t\"crypto/sha256\"\n\t\"encoding/hex\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"io\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"sync\"\n\t\"time\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n)\n\ntype FileState struct {\n\tPath     string    `json:\"path\"`\n\tHash     string    `json:\"hash\"`\n\tSize     int64     `json:\"size\"`\n\tModTime  time.Time `json:\"mod_time\"`\n\tUploaded time.Time `json:\"uploaded,omitempty\"`\n}\n\ntype SyncState struct {\n\tFiles    map[string]*FileState `json:\"files\"`\n\tLastSync time.Time             `j"
+    },
+    "internal/sync/sync_push_pull_test.go": {
+      "path": "internal/sync/sync_push_pull_test.go",
+      "mtime": 1778769386.4406102,
+      "size": 26236,
+      "hash": "c4ca8747256e968f",
+      "language": "Go",
+      "lines": 882,
+      "imports": [
+        "testing",
+        "storage",
+        "os",
+        "config",
+        "fmt",
+        "context",
+        "filepath",
+        "time",
+        "crypto",
+        "sync",
+        "strings"
+      ],
+      "exports": [],
+      "functions": [
+        "TestPushThenPullRoundTrip",
+        "TestConflictCreatesConflictFile",
+        "TestPullDetectsConflicts",
+        "Head",
+        "Download",
+        "BucketExists",
+        "TestPushNoChangesIsNoop",
+        "DeleteBatch",
+        "ListKeys",
+        "TestPushDeletesRemovedFiles",
+        "TestPullSkipsUnchangedFiles",
+        "Delete",
+        "TestNoConflictWhenOnlyRemoteChanged",
+        "writeFile",
+        "TestCrossDeviceProjectSync_LegacyKeyPassthrough",
+        "TestCrossDeviceProjectSync",
+        "TestPushUploadsModifiedFiles",
+        "TestPushUploadsNewFiles",
+        "setupTestEnv",
+        "readFile",
+        "TestPullEmptyRemoteIsNoop",
+        "TestCrossDeviceProjectSync_BothDirections",
+        "Upload",
+        "newMockStorage",
+        "List",
+        "TestPullDownloadsNewRemoteFiles"
+      ],
+      "classes": [
+        "testEnv",
+        "mockObject",
+        "mockStorage"
+      ],
+      "content_preview": "package sync\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"strings\"\n\t\"sync\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n\t\"github.com/tawanorg/claude-sync/internal/crypto\"\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n)\n\n// mockStorage implements storage.Storage in-memory for testing.\ntype mockStorage struct {\n\tmu      sync.Mutex\n\tobjects map[string]mockObject\n}\n\ntype mockObject struct {\n\tdata         []byte\n\tlastModified time.Time\n}\n\nfunc newMockStorage() "
+    },
+    "internal/sync/syncer_test.go": {
+      "path": "internal/sync/syncer_test.go",
+      "mtime": 1776288017.1282327,
+      "size": 12671,
+      "hash": "81c93184d4de2ee5",
+      "language": "Go",
+      "lines": 462,
+      "imports": [
+        "testing",
+        "os",
+        "config",
+        "context",
+        "filepath",
+        "json",
+        "crypto",
+        "atomic"
+      ],
+      "exports": [],
+      "functions": [
+        "TestSyncerStatus_DetectsNewFiles",
+        "TestSyncerPush_NoChanges",
+        "TestSyncerPushMCP_NoServers",
+        "TestSyncerPullMCP_RoundTrip",
+        "TestSyncerStatus_NoChangesAfterPush",
+        "TestSyncerPush_NewFiles",
+        "createTestFile",
+        "testSyncer",
+        "TestGzipRoundTrip",
+        "TestSyncerPushMCP_WithServers",
+        "TestIsGzipped",
+        "TestSyncerSetProgressFunc",
+        "TestSyncerMCPStatus_NoServers",
+        "TestSyncerHasState",
+        "TestSyncerPull_DownloadsNewFiles",
+        "TestNewSyncerWith",
+        "TestSyncerGetState",
+        "testEncryptor",
+        "TestSyncerPullMCP_NoRemote"
+      ],
+      "classes": [],
+      "content_preview": "package sync\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"sync/atomic\"\n\t\"testing\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n\t\"github.com/tawanorg/claude-sync/internal/crypto\"\n)\n\n// testSyncer creates a Syncer with in-memory mock storage and temp dirs using NewSyncerWith.\nfunc testSyncer(t *testing.T) (*Syncer, *mockStorage, string) {\n\tt.Helper()\n\ttmpDir := t.TempDir()\n\tclaudeDir := filepath.Join(tmpDir, \".claude\")\n\tstateDir := filepath.Join(tmpDir, \".claude-sync\")\n\n\ti"
+    },
+    "internal/sync/pathmap_test.go": {
+      "path": "internal/sync/pathmap_test.go",
+      "mtime": 1776367368.7179744,
+      "size": 10911,
+      "hash": "807e04641452d5ed",
+      "language": "Go",
+      "lines": 411,
+      "imports": [
+        "testing"
+      ],
+      "exports": [],
+      "functions": [
+        "TestReplaceSlugPrefix_BoundaryCheck",
+        "TestNormalizeRemoteKey",
+        "TestEmptyHomeDir",
+        "TestNormalizeContent",
+        "TestIsProjectPath",
+        "TestLinuxPaths",
+        "TestSameDeviceRoundTrip",
+        "TestNewPathMapper",
+        "TestCrossDeviceRoundTrip",
+        "TestResolveContent",
+        "TestEncodePathSegment",
+        "TestResolveLocalPath",
+        "TestContentCrossDevice",
+        "TestNormalizeRemoteKey_PrefixCollision"
+      ],
+      "classes": [],
+      "content_preview": "package sync\n\nimport (\n\t\"testing\"\n)\n\nfunc TestNewPathMapper(t *testing.T) {\n\ttests := []struct {\n\t\tname         string\n\t\thomeDir      string\n\t\texpectedSlug string\n\t}{\n\t\t{\"macOS short\", \"/Users/merv\", \"-Users-merv\"},\n\t\t{\"macOS long\", \"/Users/mervynlally\", \"-Users-mervynlally\"},\n\t\t{\"linux\", \"/home/merv\", \"-home-merv\"},\n\t\t{\"trailing slash\", \"/Users/merv/\", \"-Users-merv\"},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tpm := NewPathMapper(tt.homeDir)\n\t\t\tif pm.homeDirSlug != "
+    },
+    "internal/storage/s3/s3.go": {
+      "path": "internal/storage/s3/s3.go",
+      "mtime": 1776288017.127361,
+      "size": 5170,
+      "hash": "f7db77ae73ac98ea",
+      "language": "Go",
+      "lines": 210,
+      "imports": [
+        "bytes",
+        "types",
+        "errors",
+        "credentials",
+        "s3",
+        "storage",
+        "config",
+        "fmt",
+        "context",
+        "io",
+        "aws"
+      ],
+      "exports": [],
+      "functions": [
+        "init",
+        "New",
+        "Head",
+        "Upload",
+        "Download",
+        "List",
+        "BucketExists",
+        "Delete",
+        "DeleteBatch"
+      ],
+      "classes": [
+        "Client"
+      ],
+      "content_preview": "package s3\n\nimport (\n\t\"bytes\"\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\t\"io\"\n\n\t\"github.com/aws/aws-sdk-go-v2/aws\"\n\t\"github.com/aws/aws-sdk-go-v2/config\"\n\t\"github.com/aws/aws-sdk-go-v2/credentials\"\n\t\"github.com/aws/aws-sdk-go-v2/service/s3\"\n\t\"github.com/aws/aws-sdk-go-v2/service/s3/types\"\n\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n)\n\nfunc init() {\n\tstorage.NewS3 = New\n}\n\n// Client implements the storage.Storage interface for AWS S3\ntype Client struct {\n\tclient *s3.Client\n\tbucket string\n}\n\n// New cre"
+    },
+    "internal/storage/r2/r2.go": {
+      "path": "internal/storage/r2/r2.go",
+      "mtime": 1776288017.127264,
+      "size": 5190,
+      "hash": "99736273945fa36e",
+      "language": "Go",
+      "lines": 210,
+      "imports": [
+        "bytes",
+        "types",
+        "errors",
+        "credentials",
+        "s3",
+        "storage",
+        "config",
+        "fmt",
+        "context",
+        "io",
+        "aws"
+      ],
+      "exports": [],
+      "functions": [
+        "init",
+        "New",
+        "Head",
+        "Upload",
+        "Download",
+        "List",
+        "BucketExists",
+        "Delete",
+        "DeleteBatch"
+      ],
+      "classes": [
+        "Client"
+      ],
+      "content_preview": "package r2\n\nimport (\n\t\"bytes\"\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\t\"io\"\n\n\t\"github.com/aws/aws-sdk-go-v2/aws\"\n\t\"github.com/aws/aws-sdk-go-v2/config\"\n\t\"github.com/aws/aws-sdk-go-v2/credentials\"\n\t\"github.com/aws/aws-sdk-go-v2/service/s3\"\n\t\"github.com/aws/aws-sdk-go-v2/service/s3/types\"\n\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n)\n\nfunc init() {\n\tstorage.NewR2 = New\n}\n\n// Client implements the storage.Storage interface for Cloudflare R2\ntype Client struct {\n\tclient *s3.Client\n\tbucket string\n}\n\n// "
+    },
+    "internal/storage/gcs/gcs.go": {
+      "path": "internal/storage/gcs/gcs.go",
+      "mtime": 1776288017.1271565,
+      "size": 4387,
+      "hash": "c7fb14eb16a16884",
+      "language": "Go",
+      "lines": 180,
+      "imports": [
+        "errors",
+        "storage",
+        "os",
+        "fmt",
+        "context",
+        "io",
+        "option",
+        "iterator",
+        "errgroup"
+      ],
+      "exports": [],
+      "functions": [
+        "init",
+        "New",
+        "Head",
+        "Upload",
+        "Download",
+        "List",
+        "BucketExists",
+        "Delete",
+        "DeleteBatch"
+      ],
+      "classes": [
+        "Client"
+      ],
+      "content_preview": "package gcs\n\nimport (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\t\"io\"\n\t\"os\"\n\n\t\"cloud.google.com/go/storage\"\n\t\"golang.org/x/sync/errgroup\"\n\t\"google.golang.org/api/iterator\"\n\t\"google.golang.org/api/option\"\n\n\tappstorage \"github.com/tawanorg/claude-sync/internal/storage\"\n)\n\nfunc init() {\n\tappstorage.NewGCS = New\n}\n\n// Client implements the storage.Storage interface for Google Cloud Storage\ntype Client struct {\n\tclient *storage.Client\n\tbucket string\n}\n\n// New creates a new GCS storage client\nfunc New(cfg *appstora"
+    },
+    "cmd/claude-sync/reset_test.go": {
+      "path": "cmd/claude-sync/reset_test.go",
+      "mtime": 1776288017.125291,
+      "size": 3496,
+      "hash": "45e12507c00f8d5b",
+      "language": "Go",
+      "lines": 122,
+      "imports": [
+        "os",
+        "filepath",
+        "testing"
+      ],
+      "exports": [],
+      "functions": [
+        "TestResetPreservesClaudeDir",
+        "TestResetClearsConfigDir",
+        "TestResetClearsStateFile"
+      ],
+      "classes": [],
+      "content_preview": "package main\n\nimport (\n\t\"os\"\n\t\"path/filepath\"\n\t\"testing\"\n)\n\nfunc TestResetClearsConfigDir(t *testing.T) {\n\t// Create temp home directory\n\ttmpDir := t.TempDir()\n\toriginalHome := os.Getenv(\"HOME\")\n\tos.Setenv(\"HOME\", tmpDir)\n\tdefer os.Setenv(\"HOME\", originalHome)\n\n\t// Create mock config directory\n\tconfigDir := filepath.Join(tmpDir, \".claude-sync\")\n\tif err := os.MkdirAll(configDir, 0700); err != nil {\n\t\tt.Fatalf(\"Failed to create config dir: %v\", err)\n\t}\n\n\t// Create mock files\n\tfiles := []string{\"co"
+    },
+    "cmd/claude-sync/main.go": {
+      "path": "cmd/claude-sync/main.go",
+      "mtime": 1778769343.4374194,
+      "size": 71686,
+      "hash": "9947464d445cd2c2",
+      "language": "Go",
+      "lines": 2433,
+      "imports": [
+        "cobra",
+        "s3",
+        "os",
+        "sort",
+        "context",
+        "crypto",
+        "runtime",
+        "sync",
+        "util",
+        "filepath",
+        "time",
+        "strings",
+        "http",
+        "exec",
+        "storage",
+        "v2",
+        "bufio",
+        "gcs",
+        "config",
+        "r2",
+        "fmt",
+        "io",
+        "json"
+      ],
+      "exports": [],
+      "functions": [
+        "getLatestRelease",
+        "printReleaseBody",
+        "mcpCmd",
+        "handleKeyMismatch",
+        "batchResolveConflicts",
+        "findConflicts",
+        "initFullSetup",
+        "getAllReleases",
+        "interactiveResolveConflicts",
+        "printBanner",
+        "diffCmd",
+        "printInfo",
+        "replaceBinary",
+        "printWarning",
+        "initCmd",
+        "runMCPPull",
+        "showDiff",
+        "updateCmd",
+        "enterPassphraseAndVerify",
+        "mcpListCmd",
+        "runGCSWizard",
+        "pullCmd",
+        "executePull",
+        "hasExistingClaudeFiles",
+        "runR2Wizard",
+        "printStep",
+        "printSuccess",
+        "downloadBinary",
+        "initPassphraseOnly",
+        "mcpPullCmd",
+        "statusCmd",
+        "changelogCmd",
+        "clearRemoteStorage",
+        "resetCmd",
+        "runS3Wizard",
+        "handleFirstPullWithExistingFiles",
+        "pushCmd",
+        "showPullPreview",
+        "verifyKeyMatchesRemote",
+        "conflictsCmd",
+        "mcpPushCmd",
+        "createBackup",
+        "main",
+        "runMCPPush"
+      ],
+      "classes": [
+        "GitHubReleaseWithBody",
+        "conflictFile",
+        "GitHubRelease"
+      ],
+      "content_preview": "package main\n\nimport (\n\t\"bufio\"\n\t\"context\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"io\"\n\t\"net/http\"\n\t\"os\"\n\t\"os/exec\"\n\t\"path/filepath\"\n\t\"runtime\"\n\t\"sort\"\n\t\"strings\"\n\t\"time\"\n\n\t\"github.com/AlecAivazis/survey/v2\"\n\t\"github.com/spf13/cobra\"\n\n\t\"github.com/tawanorg/claude-sync/internal/config\"\n\t\"github.com/tawanorg/claude-sync/internal/crypto\"\n\t\"github.com/tawanorg/claude-sync/internal/storage\"\n\t\"github.com/tawanorg/claude-sync/internal/sync\"\n\t\"github.com/tawanorg/claude-sync/internal/util\"\n\n\t// Register storage adapt"
+    }
+  },
+  "modules": {
+    "bin": [
+      "bin/claude-sync.js"
+    ],
+    "integration": [
+      "integration/README.md",
+      "integration/docker-compose.yml",
+      "integration/r2_sync_test.go"
+    ],
+    "docs": [
+      "docs/architecture.md",
+      "docs/how-it-works.md",
+      "docs/index.md",
+      "docs/_config.yml",
+      "docs/security.md"
+    ],
+    ".codebase-intelligence": [
+      ".codebase-intelligence/codebase_index.json"
+    ],
+    "scripts": [
+      "scripts/publish-npm.sh"
+    ],
+    ".claude-plugin": [
+      ".claude-plugin/marketplace.json"
+    ],
+    "claude-code-plugin": [
+      "claude-code-plugin/README.md",
+      "claude-code-plugin/hooks/hooks.json",
+      "claude-code-plugin/scripts/generate-key.py",
+      "claude-code-plugin/scripts/check-config.sh",
+      "claude-code-plugin/.claude-plugin/plugin.json",
+      "claude-code-plugin/commands/sync-init.md",
+      "claude-code-plugin/commands/sync-help.md",
+      "claude-code-plugin/commands/sync-update.md",
+      "claude-code-plugin/commands/sync-push.md",
+      "claude-code-plugin/commands/sync-reset.md",
+      "claude-code-plugin/commands/sync-diff.md",
+      "claude-code-plugin/commands/sync-conflicts.md",
+      "claude-code-plugin/commands/sync-status.md",
+      "claude-code-plugin/commands/sync-pull.md"
+    ],
+    "npm": [
+      "npm/win32-arm64/package.json",
+      "npm/linux-arm64/package.json",
+      "npm/darwin-x64/package.json",
+      "npm/win32-x64/package.json",
+      "npm/darwin-arm64/package.json",
+      "npm/linux-x64/package.json"
+    ],
+    ".github": [
+      ".github/workflows/release.yml",
+      ".github/workflows/build-release.yml",
+      ".github/workflows/ci.yml"
+    ],
+    "internal": [
+      "internal/crypto/encrypt_test.go",
+      "internal/crypto/encrypt.go",
+      "internal/util/format_test.go",
+      "internal/util/format.go",
+      "internal/config/config.go",
+      "internal/config/config_test.go",
+      "internal/storage/config.go",
+      "internal/storage/storage_test.go",
+      "internal/storage/storage.go",
+      "internal/storage/config_test.go",
+      "internal/sync/mcp_test.go",
+      "internal/sync/sync.go",
+      "internal/sync/sync_test.go",
+      "internal/sync/pathmap.go",
+      "internal/sync/mcp.go",
+      "internal/sync/state_test.go",
+      "internal/sync/state.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/pathmap_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "cmd": [
+      "cmd/claude-sync/reset_test.go",
+      "cmd/claude-sync/main.go"
+    ]
+  },
+  "symbols": {
+    "func:getDownloadUrl": [
+      "install.js"
+    ],
+    "func:getLatestVersion": [
+      "install.js"
+    ],
+    "func:getBinaryName": [
+      "install.js"
+    ],
+    "func:install": [
+      "install.js"
+    ],
+    "func:getPlatform": [
+      "install.js"
+    ],
+    "func:request": [
+      "install.js"
+    ],
+    "func:getArch": [
+      "install.js"
+    ],
+    "func:download": [
+      "install.js"
+    ],
+    "func:getBinaryPath": [
+      "bin/claude-sync.js"
+    ],
+    "func:TestPullWithExistingFiles": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:TestKeyMismatchDetection": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:getTestStorageConfig": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:TestConflictResolution": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:getTestPassphrase": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:getEnvOrDefault": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:verifyKeyMatchesRemote": [
+      "integration/r2_sync_test.go",
+      "cmd/claude-sync/main.go"
+    ],
+    "func:cleanupRemote": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:setupTestConfig": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:Error": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:TestBasicCrossDeviceSync": [
+      "integration/r2_sync_test.go"
+    ],
+    "class:keyMismatchError": [
+      "integration/r2_sync_test.go"
+    ],
+    "func:bech32_create_checksum": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "func:convert_bits": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "func:bech32_polymod": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "func:bech32_encode": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "func:bech32_hrp_expand": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "func:generate_key_from_passphrase": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "func:main": [
+      "claude-code-plugin/scripts/generate-key.py",
+      "cmd/claude-sync/main.go"
+    ],
+    "func:TestValidatePassphraseStrength": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestEncodeAgeIdentity": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestNewEncryptor": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestNewEncryptorWithPassphraseKey": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestEncryptDecryptWithPassphraseKey": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestGenerateKeyFromPassphrase": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestGenerateKey": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestGenerateKeyFromPassphraseDifferentPassphrases": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:min": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestGenerateKeyFromPassphraseDeterministic": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestKeyExists": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestEncryptDecryptLargeData": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:TestEncryptDecrypt": [
+      "internal/crypto/encrypt_test.go"
+    ],
+    "func:Decrypt": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:GenerateKey": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:GenerateKeyFromPassphrase": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:encodeAgeIdentity": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:ValidatePassphraseStrength": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:Encrypt": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:NewEncryptor": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:KeyExists": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:PublicKey": [
+      "internal/crypto/encrypt.go"
+    ],
+    "class:Encryptor": [
+      "internal/crypto/encrypt.go"
+    ],
+    "func:TestCompareVersions": [
+      "internal/util/format_test.go"
+    ],
+    "func:TestFormatSize": [
+      "internal/util/format_test.go"
+    ],
+    "func:TestTruncatePath": [
+      "internal/util/format_test.go"
+    ],
+    "func:TestGetBinaryName": [
+      "internal/util/format_test.go"
+    ],
+    "func:TruncatePath": [
+      "internal/util/format.go"
+    ],
+    "func:GetBinaryName": [
+      "internal/util/format.go"
+    ],
+    "func:CompareVersions": [
+      "internal/util/format.go"
+    ],
+    "func:FormatSize": [
+      "internal/util/format.go"
+    ],
+    "func:ConfigFilePath": [
+      "internal/config/config.go"
+    ],
+    "func:Load": [
+      "internal/config/config.go"
+    ],
+    "func:AgeKeyFilePath": [
+      "internal/config/config.go"
+    ],
+    "func:Exists": [
+      "internal/config/config.go"
+    ],
+    "func:ClaudeDir": [
+      "internal/config/config.go"
+    ],
+    "func:ConfigDirPath": [
+      "internal/config/config.go"
+    ],
+    "func:Save": [
+      "internal/config/config.go",
+      "internal/sync/state.go"
+    ],
+    "func:StateFilePath": [
+      "internal/config/config.go"
+    ],
+    "func:IsLegacyConfig": [
+      "internal/config/config.go"
+    ],
+    "func:ClaudeJSONPath": [
+      "internal/config/config.go"
+    ],
+    "func:IsExcluded": [
+      "internal/config/config.go"
+    ],
+    "func:GetStorageConfig": [
+      "internal/config/config.go"
+    ],
+    "class:Config": [
+      "internal/config/config.go"
+    ],
+    "func:TestIsLegacyConfig": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestConfigFilePath": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestClaudeJSONPath": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestGetStorageConfig_NewFormat": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestConfigDirPath": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestGetStorageConfig_LegacyFormat": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestConfigSaveAndLoad": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestSaveAndLoad": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestClaudeDir": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestStateFilePath": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestSyncPaths": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestAgeKeyFilePath": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestLoadNotFound": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestIsExcluded": [
+      "internal/config/config_test.go"
+    ],
+    "func:TestExists": [
+      "internal/config/config_test.go"
+    ],
+    "func:Validate": [
+      "internal/storage/config.go"
+    ],
+    "func:validateR2": [
+      "internal/storage/config.go"
+    ],
+    "func:validateS3": [
+      "internal/storage/config.go"
+    ],
+    "func:GetEndpoint": [
+      "internal/storage/config.go"
+    ],
+    "func:validateGCS": [
+      "internal/storage/config.go"
+    ],
+    "class:StorageConfig": [
+      "internal/storage/config.go"
+    ],
+    "func:TestNew_InvalidConfig": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:TestMockStorage_BucketExists_Error": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:TestProviderConstants": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:TestMockStorage_BucketExists_Success": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:Head": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:Upload": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:Download": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:TestMockStorage_BucketExists_NotFound": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:List": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:BucketExists": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:TestMockStorage_Interface": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:Delete": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:DeleteBatch": [
+      "internal/storage/storage_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "class:MockStorage": [
+      "internal/storage/storage_test.go"
+    ],
+    "func:New": [
+      "internal/storage/storage.go",
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "class:Storage": [
+      "internal/storage/storage.go"
+    ],
+    "class:ObjectInfo": [
+      "internal/storage/storage.go"
+    ],
+    "func:TestStorageConfig_GetEndpoint": [
+      "internal/storage/config_test.go"
+    ],
+    "func:contains": [
+      "internal/storage/config_test.go"
+    ],
+    "func:findSubstring": [
+      "internal/storage/config_test.go"
+    ],
+    "func:TestStorageConfig_Validate": [
+      "internal/storage/config_test.go"
+    ],
+    "func:TestMergeMCPServers_NoBaseline_Conflict": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestWriteMCPServers_CreatesNewFile": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestReadMCPServers_NoMCPKey": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_KeepLocalOnly": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestWriteMCPServers_PreservesOtherKeys": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestHashMCPServers_Nil": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestNormalizeMCPPaths_EmptyHomeDir": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_KeepLocalChanged": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_NoBaseline_SameValue": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_AddFromRemote": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestNormalizeMCPPaths": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_LocalDeletion": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_RemoteDeletion": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestHashMCPServers": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_ConflictBothChanged": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestNormalizeResolveRoundTrip": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestResolveMCPPaths": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_BothChangedIdentically": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestReadMCPServers": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMergeMCPServers_UpdateFromRemote": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:TestMCPServerEqual": [
+      "internal/sync/mcp_test.go"
+    ],
+    "func:PullMCP": [
+      "internal/sync/sync.go"
+    ],
+    "func:Push": [
+      "internal/sync/sync.go"
+    ],
+    "func:log": [
+      "internal/sync/sync.go"
+    ],
+    "func:GetState": [
+      "internal/sync/sync.go"
+    ],
+    "func:claudeJSONPath": [
+      "internal/sync/sync.go"
+    ],
+    "func:isExcluded": [
+      "internal/sync/sync.go"
+    ],
+    "func:gzipCompress": [
+      "internal/sync/sync.go"
+    ],
+    "func:SetProgressFunc": [
+      "internal/sync/sync.go"
+    ],
+    "func:remoteKey": [
+      "internal/sync/sync.go"
+    ],
+    "func:Diff": [
+      "internal/sync/sync.go"
+    ],
+    "func:HasState": [
+      "internal/sync/sync.go"
+    ],
+    "func:localPath": [
+      "internal/sync/sync.go"
+    ],
+    "func:isGzipped": [
+      "internal/sync/sync.go"
+    ],
+    "func:uploadFile": [
+      "internal/sync/sync.go"
+    ],
+    "func:MCPStatus": [
+      "internal/sync/sync.go"
+    ],
+    "func:Pull": [
+      "internal/sync/sync.go"
+    ],
+    "func:downloadFile": [
+      "internal/sync/sync.go"
+    ],
+    "func:PreviewPull": [
+      "internal/sync/sync.go"
+    ],
+    "func:handleConflict": [
+      "internal/sync/sync.go"
+    ],
+    "func:PushMCP": [
+      "internal/sync/sync.go"
+    ],
+    "func:progress": [
+      "internal/sync/sync.go"
+    ],
+    "func:gzipDecompress": [
+      "internal/sync/sync.go"
+    ],
+    "func:NewSyncer": [
+      "internal/sync/sync.go"
+    ],
+    "func:NewSyncerWith": [
+      "internal/sync/sync.go"
+    ],
+    "func:Status": [
+      "internal/sync/sync.go"
+    ],
+    "class:PullPreview": [
+      "internal/sync/sync.go"
+    ],
+    "class:Syncer": [
+      "internal/sync/sync.go"
+    ],
+    "class:ProgressEvent": [
+      "internal/sync/sync.go"
+    ],
+    "class:FilePreview": [
+      "internal/sync/sync.go"
+    ],
+    "class:SyncResult": [
+      "internal/sync/sync.go"
+    ],
+    "class:MCPStatusResult": [
+      "internal/sync/sync.go"
+    ],
+    "class:DiffEntry": [
+      "internal/sync/sync.go"
+    ],
+    "func:TestSyncPathsConfig": [
+      "internal/sync/sync_test.go"
+    ],
+    "func:TestConfigPaths": [
+      "internal/sync/sync_test.go"
+    ],
+    "func:TestSyncStateDetectsAllChangeTypes": [
+      "internal/sync/sync_test.go"
+    ],
+    "func:TestFullWorkflowWithLocalState": [
+      "internal/sync/sync_test.go"
+    ],
+    "func:TestCrossDeviceSyncWithPassphrase": [
+      "internal/sync/sync_test.go"
+    ],
+    "func:NormalizeContent": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:IsProjectPath": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:NewPathMapper": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:ResolveContent": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:replaceSlugPrefix": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:encodePathSegment": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:NormalizeRemoteKey": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:ResolveLocalPath": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:NewPathMapperFromEnv": [
+      "internal/sync/pathmap.go"
+    ],
+    "class:PathMapper": [
+      "internal/sync/pathmap.go"
+    ],
+    "func:ResolveMCPServers": [
+      "internal/sync/mcp.go"
+    ],
+    "func:NormalizeMCPPaths": [
+      "internal/sync/mcp.go"
+    ],
+    "func:ReadMCPServers": [
+      "internal/sync/mcp.go"
+    ],
+    "func:NormalizeMCPServers": [
+      "internal/sync/mcp.go"
+    ],
+    "func:mcpServerEqual": [
+      "internal/sync/mcp.go"
+    ],
+    "func:hashBytes": [
+      "internal/sync/mcp.go"
+    ],
+    "func:MergeMCPServers": [
+      "internal/sync/mcp.go"
+    ],
+    "func:HashMCPServers": [
+      "internal/sync/mcp.go"
+    ],
+    "func:ResolveMCPPaths": [
+      "internal/sync/mcp.go"
+    ],
+    "func:WriteMCPServers": [
+      "internal/sync/mcp.go"
+    ],
+    "class:MCPMergeResult": [
+      "internal/sync/mcp.go"
+    ],
+    "class:MCPConflict": [
+      "internal/sync/mcp.go"
+    ],
+    "class:MCPPullResult": [
+      "internal/sync/mcp.go"
+    ],
+    "class:MCPPushResult": [
+      "internal/sync/mcp.go"
+    ],
+    "func:TestSetMCPBaseline_Nil": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestNewState": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestIsEmpty": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestGetLocalFilesWithExclude": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestGetMCPBaseline_Empty": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestStateUpdateFile": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestStateRemoveFile": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestStateMarkUploaded": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestHashFile": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestStateSaveAndLoad": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestGetLocalFilesSkipsSymlinksInDirectories": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestDetectChangesWithExclude": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestSetAndGetMCPBaseline": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestGetLocalFiles": [
+      "internal/sync/state_test.go"
+    ],
+    "func:TestDetectChanges": [
+      "internal/sync/state_test.go"
+    ],
+    "func:GetLocalFiles": [
+      "internal/sync/state.go"
+    ],
+    "func:HashFile": [
+      "internal/sync/state.go"
+    ],
+    "func:NewState": [
+      "internal/sync/state.go"
+    ],
+    "func:IsEmpty": [
+      "internal/sync/state.go"
+    ],
+    "func:GetMCPBaseline": [
+      "internal/sync/state.go"
+    ],
+    "func:SetMCPBaseline": [
+      "internal/sync/state.go"
+    ],
+    "func:RemoveFile": [
+      "internal/sync/state.go"
+    ],
+    "func:MarkUploaded": [
+      "internal/sync/state.go"
+    ],
+    "func:loadStateFromPath": [
+      "internal/sync/state.go"
+    ],
+    "func:UpdateFile": [
+      "internal/sync/state.go"
+    ],
+    "func:LoadStateFromDir": [
+      "internal/sync/state.go"
+    ],
+    "func:DetectChanges": [
+      "internal/sync/state.go"
+    ],
+    "func:LoadState": [
+      "internal/sync/state.go"
+    ],
+    "func:GetFile": [
+      "internal/sync/state.go"
+    ],
+    "class:FileChange": [
+      "internal/sync/state.go"
+    ],
+    "class:FileState": [
+      "internal/sync/state.go"
+    ],
+    "class:SyncState": [
+      "internal/sync/state.go"
+    ],
+    "func:TestPushThenPullRoundTrip": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestConflictCreatesConflictFile": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPullDetectsConflicts": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPushNoChangesIsNoop": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:ListKeys": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPushDeletesRemovedFiles": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPullSkipsUnchangedFiles": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestNoConflictWhenOnlyRemoteChanged": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:writeFile": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestCrossDeviceProjectSync_LegacyKeyPassthrough": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestCrossDeviceProjectSync": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPushUploadsModifiedFiles": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPushUploadsNewFiles": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:setupTestEnv": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:readFile": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPullEmptyRemoteIsNoop": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestCrossDeviceProjectSync_BothDirections": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:newMockStorage": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestPullDownloadsNewRemoteFiles": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "class:testEnv": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "class:mockObject": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "class:mockStorage": [
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "func:TestSyncerStatus_DetectsNewFiles": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPush_NoChanges": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPushMCP_NoServers": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPullMCP_RoundTrip": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerStatus_NoChangesAfterPush": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPush_NewFiles": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:createTestFile": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:testSyncer": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestGzipRoundTrip": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPushMCP_WithServers": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestIsGzipped": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerSetProgressFunc": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerMCPStatus_NoServers": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerHasState": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPull_DownloadsNewFiles": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestNewSyncerWith": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerGetState": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:testEncryptor": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestSyncerPullMCP_NoRemote": [
+      "internal/sync/syncer_test.go"
+    ],
+    "func:TestReplaceSlugPrefix_BoundaryCheck": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestNormalizeRemoteKey": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestEmptyHomeDir": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestNormalizeContent": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestIsProjectPath": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestLinuxPaths": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestSameDeviceRoundTrip": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestNewPathMapper": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestCrossDeviceRoundTrip": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestResolveContent": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestEncodePathSegment": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestResolveLocalPath": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestContentCrossDevice": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:TestNormalizeRemoteKey_PrefixCollision": [
+      "internal/sync/pathmap_test.go"
+    ],
+    "func:init": [
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "class:Client": [
+      "internal/storage/s3/s3.go",
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go"
+    ],
+    "func:TestResetPreservesClaudeDir": [
+      "cmd/claude-sync/reset_test.go"
+    ],
+    "func:TestResetClearsConfigDir": [
+      "cmd/claude-sync/reset_test.go"
+    ],
+    "func:TestResetClearsStateFile": [
+      "cmd/claude-sync/reset_test.go"
+    ],
+    "func:getLatestRelease": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:printReleaseBody": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:mcpCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:handleKeyMismatch": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:batchResolveConflicts": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:findConflicts": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:initFullSetup": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:getAllReleases": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:interactiveResolveConflicts": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:printBanner": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:diffCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:printInfo": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:replaceBinary": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:printWarning": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:initCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:runMCPPull": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:showDiff": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:updateCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:enterPassphraseAndVerify": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:mcpListCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:runGCSWizard": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:pullCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:executePull": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:hasExistingClaudeFiles": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:runR2Wizard": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:printStep": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:printSuccess": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:downloadBinary": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:initPassphraseOnly": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:mcpPullCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:statusCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:changelogCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:clearRemoteStorage": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:resetCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:runS3Wizard": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:handleFirstPullWithExistingFiles": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:pushCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:showPullPreview": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:conflictsCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:mcpPushCmd": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:createBackup": [
+      "cmd/claude-sync/main.go"
+    ],
+    "func:runMCPPush": [
+      "cmd/claude-sync/main.go"
+    ],
+    "class:GitHubReleaseWithBody": [
+      "cmd/claude-sync/main.go"
+    ],
+    "class:conflictFile": [
+      "cmd/claude-sync/main.go"
+    ],
+    "class:GitHubRelease": [
+      "cmd/claude-sync/main.go"
+    ]
+  },
+  "dependencies": {
+    "fs": [
+      "bin/claude-sync.js",
+      "install.js"
+    ],
+    "path": [
+      "bin/claude-sync.js",
+      "install.js"
+    ],
+    "https": [
+      "install.js"
+    ],
+    "child_process": [
+      "bin/claude-sync.js"
+    ],
+    "testing": [
+      "internal/sync/mcp_test.go",
+      "integration/r2_sync_test.go",
+      "internal/config/config_test.go",
+      "internal/sync/sync_test.go",
+      "internal/sync/pathmap_test.go",
+      "internal/crypto/encrypt_test.go",
+      "internal/storage/storage_test.go",
+      "internal/sync/state_test.go",
+      "internal/util/format_test.go",
+      "cmd/claude-sync/reset_test.go",
+      "internal/storage/config_test.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "storage": [
+      "integration/r2_sync_test.go",
+      "internal/config/config_test.go",
+      "internal/sync/sync.go",
+      "internal/storage/r2/r2.go",
+      "internal/config/config.go",
+      "internal/storage/gcs/gcs.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "os": [
+      "internal/sync/mcp_test.go",
+      "integration/r2_sync_test.go",
+      "internal/config/config_test.go",
+      "internal/crypto/encrypt.go",
+      "internal/sync/sync.go",
+      "internal/sync/sync_test.go",
+      "internal/config/config.go",
+      "claude-code-plugin/scripts/generate-key.py",
+      "internal/storage/gcs/gcs.go",
+      "internal/crypto/encrypt_test.go",
+      "internal/sync/state_test.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/pathmap.go",
+      "cmd/claude-sync/reset_test.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/sync/mcp.go"
+    ],
+    "config": [
+      "integration/r2_sync_test.go",
+      "internal/sync/sync.go",
+      "internal/storage/r2/r2.go",
+      "internal/sync/sync_test.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "r2": [
+      "integration/r2_sync_test.go",
+      "internal/sync/sync.go",
+      "cmd/claude-sync/main.go"
+    ],
+    "context": [
+      "integration/r2_sync_test.go",
+      "internal/sync/sync.go",
+      "internal/storage/r2/r2.go",
+      "internal/sync/syncer_test.go",
+      "internal/storage/gcs/gcs.go",
+      "internal/storage/storage_test.go",
+      "cmd/claude-sync/main.go",
+      "internal/storage/storage.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "sha256": [
+      "internal/sync/state.go",
+      "integration/r2_sync_test.go",
+      "internal/crypto/encrypt.go",
+      "internal/sync/mcp.go"
+    ],
+    "filepath": [
+      "internal/sync/mcp_test.go",
+      "integration/r2_sync_test.go",
+      "internal/config/config_test.go",
+      "internal/sync/sync.go",
+      "internal/sync/sync_test.go",
+      "internal/config/config.go",
+      "internal/crypto/encrypt_test.go",
+      "internal/sync/state_test.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "cmd/claude-sync/reset_test.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "crypto": [
+      "integration/r2_sync_test.go",
+      "internal/sync/sync.go",
+      "internal/sync/sync_test.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "sync": [
+      "integration/r2_sync_test.go",
+      "internal/sync/sync.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "strings": [
+      "integration/r2_sync_test.go",
+      "internal/config/config_test.go",
+      "internal/crypto/encrypt.go",
+      "internal/sync/sync.go",
+      "internal/config/config.go",
+      "internal/crypto/encrypt_test.go",
+      "internal/sync/state_test.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/pathmap.go",
+      "internal/util/format.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/sync/mcp.go"
+    ],
+    "argon2": [
+      "claude-code-plugin/scripts/generate-key.py",
+      "internal/crypto/encrypt.go"
+    ],
+    "hashlib": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "sys": [
+      "claude-code-plugin/scripts/generate-key.py"
+    ],
+    "age": [
+      "internal/crypto/encrypt.go",
+      "internal/crypto/encrypt_test.go"
+    ],
+    "bytes": [
+      "internal/sync/sync.go",
+      "internal/crypto/encrypt.go",
+      "internal/storage/r2/r2.go",
+      "internal/sync/pathmap.go",
+      "internal/sync/mcp.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "fmt": [
+      "internal/sync/sync.go",
+      "internal/crypto/encrypt.go",
+      "internal/storage/config.go",
+      "internal/storage/r2/r2.go",
+      "internal/config/config.go",
+      "internal/storage/gcs/gcs.go",
+      "internal/storage/storage_test.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/util/format.go",
+      "internal/storage/storage.go",
+      "internal/sync/sync_push_pull_test.go",
+      "internal/sync/mcp.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "io": [
+      "internal/storage/r2/r2.go",
+      "internal/sync/sync.go",
+      "internal/crypto/encrypt.go",
+      "internal/storage/gcs/gcs.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "bech32": [
+      "internal/crypto/encrypt.go"
+    ],
+    "curve25519": [
+      "internal/crypto/encrypt.go"
+    ],
+    "runtime": [
+      "cmd/claude-sync/main.go",
+      "internal/util/format_test.go",
+      "internal/util/format.go"
+    ],
+    "yaml.v3": [
+      "internal/config/config.go"
+    ],
+    "time": [
+      "internal/sync/sync.go",
+      "internal/sync/state_test.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/storage/storage.go",
+      "internal/sync/sync_push_pull_test.go"
+    ],
+    "json": [
+      "internal/sync/mcp_test.go",
+      "internal/sync/sync.go",
+      "internal/sync/state_test.go",
+      "internal/sync/state.go",
+      "cmd/claude-sync/main.go",
+      "internal/sync/syncer_test.go",
+      "internal/sync/mcp.go"
+    ],
+    "s3": [
+      "internal/storage/r2/r2.go",
+      "internal/sync/sync.go",
+      "cmd/claude-sync/main.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "gzip": [
+      "internal/sync/sync.go"
+    ],
+    "gcs": [
+      "cmd/claude-sync/main.go",
+      "internal/sync/sync.go"
+    ],
+    "atomic": [
+      "internal/sync/sync.go",
+      "internal/sync/syncer_test.go"
+    ],
+    "hex": [
+      "internal/sync/state.go",
+      "internal/sync/mcp.go"
+    ],
+    "types": [
+      "internal/storage/r2/r2.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "errors": [
+      "internal/storage/r2/r2.go",
+      "internal/storage/gcs/gcs.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "credentials": [
+      "internal/storage/r2/r2.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "aws": [
+      "internal/storage/r2/r2.go",
+      "internal/storage/s3/s3.go"
+    ],
+    "option": [
+      "internal/storage/gcs/gcs.go"
+    ],
+    "iterator": [
+      "internal/storage/gcs/gcs.go"
+    ],
+    "errgroup": [
+      "internal/storage/gcs/gcs.go"
+    ],
+    "cobra": [
+      "cmd/claude-sync/main.go"
+    ],
+    "sort": [
+      "cmd/claude-sync/main.go"
+    ],
+    "util": [
+      "cmd/claude-sync/main.go"
+    ],
+    "http": [
+      "cmd/claude-sync/main.go"
+    ],
+    "exec": [
+      "cmd/claude-sync/main.go"
+    ],
+    "v2": [
+      "cmd/claude-sync/main.go"
+    ],
+    "bufio": [
+      "cmd/claude-sync/main.go"
+    ]
+  },
+  "stats": {
+    "total_files": 68,
+    "total_modules": 11,
+    "total_symbols": 333
+  }
+}

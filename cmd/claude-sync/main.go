@@ -63,6 +63,7 @@ func main() {
 		diffCmd(),
 		conflictsCmd(),
 		resetCmd(),
+		migrateCmd(),
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
@@ -1536,6 +1537,84 @@ Examples:
 	cmd.Flags().BoolVar(&clearRemote, "remote", false, "Delete all files from cloud storage bucket")
 	cmd.Flags().BoolVar(&clearLocal, "local", false, "Clear local sync state")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+
+	return cmd
+}
+
+func migrateCmd() *cobra.Command {
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Migrate remote keys to cross-device format",
+		Long: `Migrate legacy remote storage keys to use portable ${HOME} placeholders.
+
+Before cross-device sync support, project files were stored with literal home
+directory paths (e.g., projects/-Users-merv-nexura/...). This command replaces
+those keys with normalized keys (e.g., projects/${HOME}-nexura/...) so they
+resolve correctly on any machine.
+
+Safe to run multiple times — already-normalized keys are skipped.
+
+Examples:
+  claude-sync migrate            # Migrate legacy keys
+  claude-sync migrate --dry-run  # Preview what would change`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load config: %w", err)
+			}
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return fmt.Errorf("failed to create syncer: %w", err)
+			}
+
+			ctx := context.Background()
+
+			if dryRun {
+				printInfo("Dry run — no changes will be made")
+				fmt.Println()
+			}
+
+			result, err := syncer.MigrateRemoteKeys(ctx, dryRun)
+			if err != nil {
+				return err
+			}
+
+			if dryRun {
+				if len(result.Migrated) == 0 {
+					printSuccess("No legacy keys found — nothing to migrate")
+				} else {
+					fmt.Printf("Found %d legacy key(s) to migrate:\n", len(result.Migrated))
+					for _, key := range result.Migrated {
+						fmt.Printf("  %s•%s %s\n", colorYellow, colorReset, key)
+					}
+					fmt.Println()
+					printInfo("Run 'claude-sync migrate' without --dry-run to apply")
+				}
+			} else {
+				total := len(result.Migrated) + len(result.Deleted)
+				if total == 0 {
+					printSuccess("No legacy keys found — nothing to migrate")
+				} else {
+					if len(result.Migrated) > 0 {
+						printSuccess(fmt.Sprintf("Re-uploaded %d key(s) with normalized paths", len(result.Migrated)))
+					}
+					if len(result.Deleted) > 0 {
+						printSuccess(fmt.Sprintf("Cleaned up %d legacy key(s) (normalized version already existed)", len(result.Deleted)))
+					}
+				}
+				for _, e := range result.Errors {
+					printWarning(e.Error())
+				}
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without modifying remote storage")
 
 	return cmd
 }
