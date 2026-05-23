@@ -2,7 +2,54 @@ package storage
 
 import (
 	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
 )
+
+// regionPattern matches AWS-style region identifiers (e.g. us-east-1, eu-central-1)
+// and Backblaze B2 regions (e.g. us-west-004), used to extract a signing region
+// from an S3-compatible endpoint host.
+var regionPattern = regexp.MustCompile(`^[a-z]{2}-[a-z]+-\d+$`)
+
+// NormalizeEndpoint ensures an S3-compatible endpoint is an absolute URI.
+// The AWS SDK's BaseEndpoint requires a scheme, so a bare host such as
+// "s3.eu-central-003.backblazeb2.com" is prefixed with "https://". Endpoints
+// that already carry a scheme (http:// or https://) are returned unchanged.
+func NormalizeEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+	if !strings.Contains(endpoint, "://") {
+		return "https://" + endpoint
+	}
+	return endpoint
+}
+
+// RegionFromEndpoint derives the signing region from an S3-compatible endpoint URL.
+// Providers like Backblaze B2 and Wasabi encode the region in the host as
+// s3.<region>.<provider>.com; SigV4 needs that exact region. When the region
+// cannot be confidently extracted (R2, MinIO, custom hosts) it returns "auto",
+// which works for providers that ignore the region. Returns "" for an empty endpoint.
+func RegionFromEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+
+	host := endpoint
+	if u, err := url.Parse(endpoint); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+
+	labels := strings.Split(host, ".")
+	if len(labels) >= 2 && labels[0] == "s3" && regionPattern.MatchString(labels[1]) {
+		return labels[1]
+	}
+	return "auto"
+}
 
 // StorageConfig holds configuration for any storage provider
 type StorageConfig struct {

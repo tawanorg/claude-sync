@@ -40,19 +40,29 @@ func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	var client *s3.Client
-	if cfg.Endpoint != "" {
-		client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.Endpoint)
-		})
-	} else {
-		client = s3.NewFromConfig(awsCfg)
-	}
+	client := s3.NewFromConfig(awsCfg, buildS3Options(cfg))
 
 	return &Client{
 		client: client,
 		bucket: cfg.Bucket,
 	}, nil
+}
+
+// buildS3Options returns the functional options applied to the S3 client.
+// When a custom endpoint is configured (i.e. an S3-compatible provider such as
+// Backblaze B2, MinIO or Wasabi rather than AWS), it points the client at that
+// endpoint and relaxes checksum behavior to WhenRequired. The AWS SDK's default
+// (WhenSupported) sends x-amz-checksum integrity headers that several
+// S3-compatible providers reject; leaving the endpoint empty preserves the
+// AWS-native defaults unchanged.
+func buildS3Options(cfg *storage.StorageConfig) func(*s3.Options) {
+	return func(o *s3.Options) {
+		if cfg.Endpoint != "" {
+			o.BaseEndpoint = aws.String(storage.NormalizeEndpoint(cfg.Endpoint))
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+		}
+	}
 }
 
 // Upload stores data with the given key

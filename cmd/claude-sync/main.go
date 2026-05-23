@@ -119,6 +119,9 @@ func initCmd() *cobra.Command {
 	// S3 flags
 	var s3Region string
 
+	// S3-compatible (custom endpoint) flags
+	var s3Endpoint string
+
 	// GCS flags
 	var gcsProjectID, gcsCredentialsFile string
 
@@ -128,14 +131,16 @@ func initCmd() *cobra.Command {
 		Long: `Set up cloud storage credentials and generate encryption keys.
 
 Supported providers:
-  - r2:  Cloudflare R2 (S3-compatible, free tier: 10GB)
-  - s3:  Amazon S3
-  - gcs: Google Cloud Storage
+  - r2:            Cloudflare R2 (S3-compatible, free tier: 10GB)
+  - s3:            Amazon S3
+  - gcs:           Google Cloud Storage
+  - s3-compatible: Any S3-compatible provider via custom endpoint (Backblaze B2, MinIO, Wasabi, ...)
 
 Examples:
   claude-sync init                # Full setup wizard
   claude-sync init --passphrase   # Re-enter passphrase only (keeps storage config)
-  claude-sync init --force        # Reset everything, start fresh`,
+  claude-sync init --force        # Reset everything, start fresh
+  claude-sync init --provider s3-compatible --endpoint https://s3.us-west-004.backblazeb2.com   # Backblaze B2`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Show banner
 			printBanner()
@@ -149,12 +154,12 @@ Examples:
 			}
 
 			// Normal flow: full setup
-			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile, usePassphrase, force)
+			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, usePassphrase, force)
 		},
 	}
 
 	// Provider selection
-	cmd.Flags().StringVar(&provider, "provider", "", "Storage provider: r2, s3, or gcs")
+	cmd.Flags().StringVar(&provider, "provider", "", "Storage provider: r2, s3, gcs, or s3-compatible")
 	cmd.Flags().StringVar(&bucket, "bucket", "", "Bucket name")
 	cmd.Flags().BoolVar(&usePassphrase, "passphrase", false, "Derive encryption key from passphrase")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config/key without prompting")
@@ -165,7 +170,10 @@ Examples:
 	cmd.Flags().StringVar(&secretKey, "secret-key", "", "Secret Access Key (R2/S3)")
 
 	// S3 flags
-	cmd.Flags().StringVar(&s3Region, "region", "", "AWS Region (S3)")
+	cmd.Flags().StringVar(&s3Region, "region", "", "Region (S3 / S3-compatible)")
+
+	// S3-compatible flags
+	cmd.Flags().StringVar(&s3Endpoint, "endpoint", "", "Custom S3-compatible endpoint URL (e.g. https://s3.us-west-004.backblazeb2.com)")
 
 	// GCS flags
 	cmd.Flags().StringVar(&gcsProjectID, "project-id", "", "GCP Project ID (GCS)")
@@ -216,7 +224,7 @@ func initPassphraseOnly(ctx context.Context, keyPath string) error {
 }
 
 // initFullSetup handles the full init wizard
-func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, gcsProjectID, gcsCredentialsFile string, usePassphrase, force bool) error {
+func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile string, usePassphrase, force bool) error {
 	if config.Exists() && !force {
 		var overwrite bool
 		prompt := &survey.Confirm{
@@ -241,6 +249,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 				"Cloudflare R2 (recommended - free tier: 10GB)",
 				"Amazon S3",
 				"Google Cloud Storage",
+				"S3-compatible (custom endpoint) — Backblaze B2, MinIO, Wasabi, ...",
 			},
 		}
 		var choice int
@@ -254,6 +263,8 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 			provider = "s3"
 		case 2:
 			provider = "gcs"
+		case 3:
+			provider = "s3-compatible"
 		}
 	}
 
@@ -268,6 +279,8 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 		storageCfg, err = runS3Wizard(accessKey, secretKey, s3Region, bucket)
 	case "gcs":
 		storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
+	case "s3-compatible":
+		storageCfg, err = runS3CompatibleWizard(s3Endpoint, accessKey, secretKey, s3Region, bucket)
 	default:
 		return fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -644,6 +657,94 @@ func runS3Wizard(accessKey, secretKey, region, bucket string) (*storage.StorageC
 		AccessKeyID:     answers.AccessKey,
 		SecretAccessKey: answers.SecretKey,
 		Region:          answers.Region,
+	}, nil
+}
+
+// runS3CompatibleWizard configures any S3-compatible provider (Backblaze B2,
+// MinIO, Wasabi, DigitalOcean Spaces, ...) by collecting a custom endpoint URL.
+// It reuses the S3 storage engine (ProviderS3 with Endpoint set); the engine
+// relaxes checksum behavior for custom endpoints so these providers accept the
+// uploads. The signing region is pre-filled from the endpoint when derivable.
+func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string) (*storage.StorageConfig, error) {
+	fmt.Printf("  %sS3-Compatible Setup%s\n\n", colorBold, colorReset)
+	printInfo("Works with any S3-compatible provider: Backblaze B2, MinIO, Wasabi, DigitalOcean Spaces, ...")
+	fmt.Println()
+	printInfo("You need the provider's S3 endpoint URL, an access key/secret, and a bucket.")
+	fmt.Println()
+
+	// Ask the endpoint first so the signing region can be derived from it.
+	if endpoint == "" {
+		q := &survey.Input{
+			Message: "S3 endpoint URL:",
+			Help:    "e.g. https://s3.us-west-004.backblazeb2.com (Backblaze B2)",
+		}
+		if err := survey.AskOne(q, &endpoint, survey.WithValidator(survey.Required)); err != nil {
+			return nil, err
+		}
+	}
+
+	if region == "" {
+		region = storage.RegionFromEndpoint(endpoint)
+	}
+
+	answers := struct {
+		AccessKey string
+		SecretKey string
+		Region    string
+		Bucket    string
+	}{
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+		Region:    region,
+		Bucket:    bucket,
+	}
+
+	questions := []*survey.Question{
+		{
+			Name: "AccessKey",
+			Prompt: &survey.Input{
+				Message: "Access Key ID:",
+				Default: accessKey,
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "SecretKey",
+			Prompt: &survey.Password{
+				Message: "Secret Access Key:",
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "Region",
+			Prompt: &survey.Input{
+				Message: "Region:",
+				Default: region,
+				Help:    "Signing region, auto-detected from the endpoint. 'auto' works for providers that ignore it.",
+			},
+			Validate: survey.Required,
+		},
+		{
+			Name: "Bucket",
+			Prompt: &survey.Input{
+				Message: "Bucket name:",
+				Default: "claude-sync",
+			},
+			Validate: survey.Required,
+		},
+	}
+
+	if err := survey.Ask(questions, &answers); err != nil {
+		return nil, err
+	}
+
+	return &storage.StorageConfig{
+		Provider:        storage.ProviderS3,
+		Bucket:          answers.Bucket,
+		AccessKeyID:     answers.AccessKey,
+		SecretAccessKey: answers.SecretKey,
+		Region:          answers.Region,
+		Endpoint:        storage.NormalizeEndpoint(endpoint),
 	}, nil
 }
 

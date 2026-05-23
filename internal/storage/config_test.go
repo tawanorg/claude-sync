@@ -234,6 +234,112 @@ func TestStorageConfig_GetEndpoint(t *testing.T) {
 	}
 }
 
+func TestRegionFromEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		expected string
+	}{
+		{
+			name:     "empty endpoint yields empty region",
+			endpoint: "",
+			expected: "",
+		},
+		{
+			name:     "Backblaze B2 endpoint",
+			endpoint: "https://s3.us-west-004.backblazeb2.com",
+			expected: "us-west-004",
+		},
+		{
+			name:     "Backblaze B2 eu endpoint",
+			endpoint: "https://s3.eu-central-003.backblazeb2.com",
+			expected: "eu-central-003",
+		},
+		{
+			name:     "Wasabi endpoint",
+			endpoint: "https://s3.us-east-1.wasabisys.com",
+			expected: "us-east-1",
+		},
+		{
+			name:     "endpoint without scheme",
+			endpoint: "s3.us-west-004.backblazeb2.com",
+			expected: "us-west-004",
+		},
+		{
+			name:     "endpoint with port",
+			endpoint: "https://s3.us-west-004.backblazeb2.com:443",
+			expected: "us-west-004",
+		},
+		{
+			name:     "R2 style host is not extractable",
+			endpoint: "https://abc123.r2.cloudflarestorage.com",
+			expected: "auto",
+		},
+		{
+			name:     "MinIO style host is not extractable",
+			endpoint: "https://minio.example.com:9000",
+			expected: "auto",
+		},
+		{
+			name:     "AWS global endpoint does not mistake amazonaws for region",
+			endpoint: "https://s3.amazonaws.com",
+			expected: "auto",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RegionFromEndpoint(tt.endpoint)
+			if got != tt.expected {
+				t.Errorf("RegionFromEndpoint(%q) = %q, want %q", tt.endpoint, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNormalizeEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		expected string
+	}{
+		{
+			name:     "empty stays empty",
+			endpoint: "",
+			expected: "",
+		},
+		{
+			name:     "bare host gets https scheme",
+			endpoint: "s3.eu-central-003.backblazeb2.com",
+			expected: "https://s3.eu-central-003.backblazeb2.com",
+		},
+		{
+			name:     "bare host with port gets https scheme",
+			endpoint: "minio.example.com:9000",
+			expected: "https://minio.example.com:9000",
+		},
+		{
+			name:     "https endpoint unchanged",
+			endpoint: "https://s3.us-west-004.backblazeb2.com",
+			expected: "https://s3.us-west-004.backblazeb2.com",
+		},
+		{
+			name:     "http endpoint scheme preserved",
+			endpoint: "http://minio.local:9000",
+			expected: "http://minio.local:9000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeEndpoint(tt.endpoint)
+			if got != tt.expected {
+				t.Errorf("NormalizeEndpoint(%q) = %q, want %q", tt.endpoint, got, tt.expected)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))

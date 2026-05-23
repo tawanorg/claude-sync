@@ -80,6 +80,7 @@ claude-sync pull
 | **Cloudflare R2** | 10GB storage | Personal use (recommended) |
 | **AWS S3** | 5GB (12 months) | AWS users |
 | **Google Cloud Storage** | 5GB | GCP users |
+| **S3-compatible** | varies | Backblaze B2, MinIO, Wasabi, DigitalOcean Spaces, self-hosted |
 
 ### Step 2: Create a Bucket
 
@@ -112,6 +113,22 @@ You'll need: Access Key ID, Secret Access Key, Region
 3. Grant "Storage Object Admin" role → Create JSON key
 
 You'll need: Project ID, Service Account JSON file (or use `gcloud auth application-default login`)
+</details>
+
+<details>
+<summary><b>S3-compatible</b> (Backblaze B2, MinIO, Wasabi, DigitalOcean Spaces, ...)</summary>
+
+Any provider exposing an S3-compatible API works through the **S3-compatible (custom endpoint)** option. Create a bucket and an application key with your provider, then supply its S3 endpoint URL.
+
+Example (Backblaze B2):
+
+```bash
+claude-sync init --provider s3-compatible --endpoint https://s3.us-west-004.backblazeb2.com
+```
+
+You'll need: Endpoint URL, Access Key ID, Secret Access Key, Bucket. The signing region is auto-detected from the endpoint (e.g. `us-west-004`); for providers that ignore it, `auto` is used.
+
+> Custom endpoints automatically relax the AWS SDK's default integrity-checksum headers, which some S3-compatible providers reject. AWS S3 behavior is unchanged.
 </details>
 
 ### Step 3: Run Init
