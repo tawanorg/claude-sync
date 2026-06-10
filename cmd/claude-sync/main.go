@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1704,6 +1706,11 @@ Examples:
 				return fmt.Errorf("failed to download update: %w", err)
 			}
 
+			// Verify against the release's published checksums
+			if err := verifyChecksum(release, assetName, newBinary); err != nil {
+				return fmt.Errorf("refusing to install update: %w", err)
+			}
+
 			// Get current executable path
 			execPath, err := os.Executable()
 			if err != nil {
@@ -1759,6 +1766,49 @@ func getLatestRelease() (*GitHubRelease, error) {
 	}
 
 	return &release, nil
+}
+
+// verifyChecksum validates the downloaded binary against the checksums.txt
+// asset published with the release. Releases predating checksum publication
+// warn instead of failing; once checksums.txt is present, a missing entry or
+// a mismatch aborts the update.
+func verifyChecksum(release *GitHubRelease, assetName string, data []byte) error {
+	var checksumsURL string
+	for _, asset := range release.Assets {
+		if asset.Name == "checksums.txt" {
+			checksumsURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+	if checksumsURL == "" {
+		fmt.Printf("%s!%s Release has no checksums.txt; skipping integrity verification\n", colorYellow, colorReset)
+		return nil
+	}
+
+	body, err := downloadBinary(checksumsURL)
+	if err != nil {
+		return fmt.Errorf("failed to download checksums.txt: %w", err)
+	}
+
+	sum := sha256.Sum256(data)
+	got := hex.EncodeToString(sum[:])
+
+	for _, line := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		// sha256sum format: "<hash>  <filename>" ("*" prefix = binary mode)
+		if strings.TrimPrefix(fields[1], "*") != assetName {
+			continue
+		}
+		if !strings.EqualFold(fields[0], got) {
+			return fmt.Errorf("sha256 mismatch for %s: release lists %s, downloaded %s", assetName, fields[0], got)
+		}
+		fmt.Printf("%s✓%s Checksum verified\n", colorGreen, colorReset)
+		return nil
+	}
+	return fmt.Errorf("checksums.txt has no entry for %s", assetName)
 }
 
 func downloadBinary(url string) ([]byte, error) {

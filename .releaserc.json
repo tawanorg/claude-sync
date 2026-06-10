@@ -1,23 +1,52 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "main"
+  ],
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     "@semantic-release/changelog",
-    ["@semantic-release/exec", {
-      "prepareCmd": "VERSION=${nextRelease.version} make build-all"
-    }],
-    ["@semantic-release/git", {
-      "assets": ["CHANGELOG.md"],
-      "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
-    }],
-    ["@semantic-release/github", {
-      "assets": [
-        {"path": "bin/claude-sync-darwin-arm64", "label": "claude-sync-darwin-arm64"},
-        {"path": "bin/claude-sync-darwin-amd64", "label": "claude-sync-darwin-amd64"},
-        {"path": "bin/claude-sync-linux-amd64", "label": "claude-sync-linux-amd64"},
-        {"path": "bin/claude-sync-linux-arm64", "label": "claude-sync-linux-arm64"}
-      ]
-    }]
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "VERSION=${nextRelease.version} make build-all"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md"
+        ],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "bin/claude-sync-darwin-arm64",
+            "label": "claude-sync-darwin-arm64"
+          },
+          {
+            "path": "bin/claude-sync-darwin-amd64",
+            "label": "claude-sync-darwin-amd64"
+          },
+          {
+            "path": "bin/claude-sync-linux-amd64",
+            "label": "claude-sync-linux-amd64"
+          },
+          {
+            "path": "bin/claude-sync-linux-arm64",
+            "label": "claude-sync-linux-arm64"
+          },
+          {
+            "path": "bin/checksums.txt",
+            "label": "checksums.txt"
+          }
+        ]
+      }
+    ]
   ]
 }

@@ -37,6 +37,7 @@ lint:
 
 # Build for multiple platforms
 build-all: build-darwin build-linux
+	cd $(BUILD_DIR) && shasum -a 256 $(BINARY_NAME)-* > checksums.txt
 
 build-darwin:
 	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/claude-sync

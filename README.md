@@ -196,7 +196,7 @@ claude-sync diff        # Show differences between local and remote
 claude-sync conflicts   # List and resolve conflicts
 claude-sync reset       # Reset configuration (forgot passphrase)
 claude-sync migrate     # Convert legacy remote keys to portable path-mapped keys
-claude-sync update      # Update to latest version
+claude-sync update      # Update to latest version (verifies release checksums)
 claude-sync changelog   # Show release history
 claude-sync --help      # Show all commands
 ```
