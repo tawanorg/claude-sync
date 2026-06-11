@@ -63,6 +63,7 @@ func main() {
 		diffCmd(),
 		conflictsCmd(),
 		resetCmd(),
+		migrateCmd(),
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
@@ -1536,6 +1537,93 @@ Examples:
 	cmd.Flags().BoolVar(&clearRemote, "remote", false, "Delete all files from cloud storage bucket")
 	cmd.Flags().BoolVar(&clearLocal, "local", false, "Clear local sync state")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+
+	return cmd
+}
+
+func migrateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Rewrite legacy remote keys to portable path-mapped keys",
+		Long: `Re-upload this device's project files under portable, path-mapped remote
+keys and delete the legacy machine-specific keys.
+
+Older versions stored project sessions under keys derived from this machine's
+absolute paths (e.g. projects/-Users-alice-my-app/...), so sessions pulled on
+a device with a different username or layout were not resumable. New pushes
+use portable tokens (e.g. projects/${HOME}-my-app/...); migrate converts
+existing remote data in place.
+
+Run this once on every device. Keys owned by another device are left for that
+device's migrate run and reported as "left for other devices".`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+
+			if !quiet {
+				syncer.SetProgressFunc(func(event sync.ProgressEvent) {
+					if event.Error != nil {
+						fmt.Printf("\r%s✗%s %s: %v\n", colorYellow, colorReset, event.Path, event.Error)
+						return
+					}
+					if event.Action == "upload" && !event.Complete {
+						progress := fmt.Sprintf("[%d/%d]", event.Current, event.Total)
+						shortPath := util.TruncatePath(event.Path, 50)
+						fmt.Printf("\r%s↻%s %s%s%s %s%s",
+							colorCyan, colorReset,
+							colorDim, progress, colorReset,
+							shortPath,
+							strings.Repeat(" ", 10))
+					}
+				})
+				fmt.Printf("%s⋯%s Scanning remote for legacy keys...\n", colorDim, colorReset)
+			}
+
+			result, err := syncer.MigratePaths(context.Background())
+			if err != nil {
+				return err
+			}
+
+			if !quiet {
+				fmt.Println()
+				if len(result.Migrated) == 0 && len(result.Foreign) == 0 && len(result.Errors) == 0 {
+					fmt.Printf("%s✓%s Nothing to migrate\n", colorGreen, colorReset)
+					return nil
+				}
+
+				var parts []string
+				if len(result.Migrated) > 0 {
+					parts = append(parts, fmt.Sprintf("%s%d migrated%s", colorGreen, len(result.Migrated), colorReset))
+				}
+				if len(result.Foreign) > 0 {
+					parts = append(parts, fmt.Sprintf("%s%d left for other devices%s", colorDim, len(result.Foreign), colorReset))
+				}
+				if len(result.Errors) > 0 {
+					parts = append(parts, fmt.Sprintf("%s%d failed%s", colorYellow, len(result.Errors), colorReset))
+				}
+				fmt.Printf("%s✓%s Migration complete: %s\n", colorGreen, colorReset, strings.Join(parts, ", "))
+
+				if len(result.Foreign) > 0 {
+					fmt.Printf("\n%sRun 'claude-sync migrate' on your other devices to convert the remaining keys.%s\n", colorDim, colorReset)
+				}
+				if len(result.Errors) > 0 {
+					fmt.Printf("\n%sErrors:%s\n", colorYellow, colorReset)
+					for _, e := range result.Errors {
+						fmt.Printf("  %s•%s %v\n", colorYellow, colorReset, e)
+					}
+				}
+			}
+
+			return nil
+		},
+	}
 
 	return cmd
 }

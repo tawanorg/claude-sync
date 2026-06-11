@@ -41,6 +41,17 @@ type Config struct {
 	// MCPSync enables syncing MCP server configs from ~/.claude.json
 	MCPSync bool `yaml:"mcp_sync,omitempty"`
 
+	// PathMap maps local directory prefixes to shared token names so project
+	// sessions stay resumable across devices with different layouts.
+	// The home directory is always mapped (token HOME); add entries here when
+	// project roots differ beyond that, e.g.:
+	//   path_map:
+	//     ~/work: WORK        # this device keeps projects in ~/work
+	// with the other device mapping its own location to the same token:
+	//   path_map:
+	//     ~/Projects: WORK
+	PathMap map[string]string `yaml:"path_map,omitempty"`
+
 	// ClaudeDirOverride allows overriding the default ~/.claude path (for testing)
 	ClaudeDirOverride string `yaml:"-"`
 
@@ -124,6 +135,19 @@ func Load() (*Config, error) {
 	if cfg.EncryptionKey != "" && cfg.EncryptionKey[0] == '~' {
 		home, _ := os.UserHomeDir()
 		cfg.EncryptionKey = filepath.Join(home, cfg.EncryptionKey[1:])
+	}
+
+	// Expand ~ in path_map keys
+	if len(cfg.PathMap) > 0 {
+		home, _ := os.UserHomeDir()
+		expanded := make(map[string]string, len(cfg.PathMap))
+		for p, name := range cfg.PathMap {
+			if p != "" && p[0] == '~' {
+				p = filepath.Join(home, p[1:])
+			}
+			expanded[p] = name
+		}
+		cfg.PathMap = expanded
 	}
 
 	// Set default endpoint for Cloudflare R2

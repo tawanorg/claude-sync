@@ -34,6 +34,7 @@ type Syncer struct {
 	quiet      bool
 	onProgress ProgressFunc
 	cfg        *config.Config
+	paths      *PathMapper
 }
 
 type SyncResult struct {
@@ -85,6 +86,12 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 		claudeDir = cfg.ClaudeDirOverride
 	}
 
+	homeDir, _ := os.UserHomeDir()
+	mapper, err := NewPathMapper(homeDir, cfg.PathMap)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Syncer{
 		storage:   store,
 		encryptor: enc,
@@ -92,11 +99,14 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 		claudeDir: claudeDir,
 		quiet:     quiet,
 		cfg:       cfg,
+		paths:     mapper,
 	}, nil
 }
 
 // NewSyncerWith creates a Syncer with pre-built dependencies (for testing).
 func NewSyncerWith(cfg *config.Config, store storage.Storage, enc *crypto.Encryptor, state *SyncState, claudeDir string, quiet bool) *Syncer {
+	homeDir, _ := os.UserHomeDir()
+	mapper, _ := NewPathMapper(homeDir, cfg.PathMap)
 	return &Syncer{
 		storage:   store,
 		encryptor: enc,
@@ -104,6 +114,7 @@ func NewSyncerWith(cfg *config.Config, store storage.Storage, enc *crypto.Encryp
 		claudeDir: claudeDir,
 		quiet:     quiet,
 		cfg:       cfg,
+		paths:     mapper,
 	}
 }
 
@@ -241,22 +252,10 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	}
 
 	// Build remote file map
-	remoteFiles := make(map[string]storage.ObjectInfo)
-	for _, obj := range remoteObjects {
-		// Skip non-encrypted files
-		if !strings.HasSuffix(obj.Key, ".age") {
-			continue
-		}
-		localPath := s.localPath(obj.Key)
-		// Skip external files (handled by MCP sync)
-		if strings.HasPrefix(localPath, "_external/") {
-			continue
-		}
-		// Skip excluded paths
-		if s.isExcluded(localPath) {
-			continue
-		}
-		remoteFiles[localPath] = obj
+	remoteFiles, skipped := s.buildRemoteMap(remoteObjects)
+	for _, key := range skipped {
+		result.Errors = append(result.Errors,
+			fmt.Errorf("%s: unknown path token; add the matching path_map entry on this device", key))
 	}
 
 	// Get current local files
@@ -376,6 +375,11 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	// Replace machine-specific paths with portable tokens in session content
+	if IsPortableContentPath(relativePath) {
+		data = s.paths.NormalizeContent(data)
+	}
+
 	// Compress
 	compressed, err := gzipCompress(data)
 	if err != nil {
@@ -424,15 +428,25 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 		}
 	}
 
-	// Ensure directory exists
+	// Replace portable tokens with this device's paths in session content
+	if IsPortableContentPath(relativePath) {
+		data = s.paths.ResolveContent(data)
+	}
+
+	// Guard against path traversal from crafted remote keys
 	fullPath := filepath.Join(s.claudeDir, relativePath)
+	if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean(s.claudeDir)+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to write outside %s: %s", s.claudeDir, relativePath)
+	}
+
+	// Ensure directory exists
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Write file
-	if err := os.WriteFile(fullPath, data, 0644); err != nil {
+	// Transcripts can contain secrets echoed by tools: keep them user-only
+	if err := os.WriteFile(fullPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -458,13 +472,49 @@ func (s *Syncer) handleConflict(ctx context.Context, relativePath string, remote
 }
 
 func (s *Syncer) remoteKey(relativePath string) string {
-	// Add .age extension for encrypted files
-	return relativePath + ".age"
+	// Normalize machine-specific path segments, add .age extension
+	return s.paths.NormalizeRelPath(relativePath) + ".age"
 }
 
-func (s *Syncer) localPath(remoteKey string) string {
-	// Remove .age extension
-	return strings.TrimSuffix(remoteKey, ".age")
+// localPath maps a remote key back to a local relative path. ok is false when
+// the key uses a path_map token this device doesn't define.
+func (s *Syncer) localPath(remoteKey string) (string, bool) {
+	return s.paths.ResolveRelPath(strings.TrimSuffix(remoteKey, ".age"))
+}
+
+// buildRemoteMap maps remote objects to local relative paths, skipping
+// non-encrypted keys, MCP data, excluded paths, and keys with unknown path
+// tokens (reported via skipped). When a legacy un-normalized key and its
+// normalized replacement both exist, the normalized one wins.
+func (s *Syncer) buildRemoteMap(remoteObjects []storage.ObjectInfo) (remoteFiles map[string]storage.ObjectInfo, skipped []string) {
+	remoteFiles = make(map[string]storage.ObjectInfo)
+	for _, obj := range remoteObjects {
+		// Skip non-encrypted files
+		if !strings.HasSuffix(obj.Key, ".age") {
+			continue
+		}
+		localPath, ok := s.localPath(obj.Key)
+		if !ok {
+			skipped = append(skipped, obj.Key)
+			continue
+		}
+		// Skip external files (handled by MCP sync)
+		if strings.HasPrefix(localPath, "_external/") {
+			continue
+		}
+		// Skip excluded paths
+		if s.isExcluded(localPath) {
+			continue
+		}
+		if existing, dup := remoteFiles[localPath]; dup {
+			// Prefer the canonical (normalized) key over a legacy duplicate
+			if existing.Key == s.remoteKey(localPath) {
+				continue
+			}
+		}
+		remoteFiles[localPath] = obj
+	}
+	return remoteFiles, skipped
 }
 
 func (s *Syncer) GetState() *SyncState {
@@ -508,21 +558,7 @@ func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
 	}
 
 	// Build remote file map
-	remoteFiles := make(map[string]storage.ObjectInfo)
-	for _, obj := range remoteObjects {
-		if !strings.HasSuffix(obj.Key, ".age") {
-			continue
-		}
-		localPath := s.localPath(obj.Key)
-		// Skip external files (handled by MCP sync)
-		if strings.HasPrefix(localPath, "_external/") {
-			continue
-		}
-		if s.isExcluded(localPath) {
-			continue
-		}
-		remoteFiles[localPath] = obj
-	}
+	remoteFiles, _ := s.buildRemoteMap(remoteObjects)
 
 	// Get current local files
 	localFiles, err := GetLocalFiles(s.claudeDir, config.SyncPaths, s.isExcluded)
@@ -615,21 +651,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 		return nil, fmt.Errorf("failed to list remote objects: %w", err)
 	}
 
-	remoteFiles := make(map[string]storage.ObjectInfo)
-	for _, obj := range remoteObjects {
-		if !strings.HasSuffix(obj.Key, ".age") {
-			continue
-		}
-		localPath := s.localPath(obj.Key)
-		// Skip external files (handled by MCP sync)
-		if strings.HasPrefix(localPath, "_external/") {
-			continue
-		}
-		if s.isExcluded(localPath) {
-			continue
-		}
-		remoteFiles[localPath] = obj
-	}
+	remoteFiles, _ := s.buildRemoteMap(remoteObjects)
 
 	// Find local-only and modified files
 	for relPath, info := range localFiles {

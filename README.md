@@ -155,26 +155,35 @@ claude-sync pull
 | `~/.claude/settings.local.json` | Local settings |
 | `~/.claude/CLAUDE.md` | Global instructions |
 
-## Limitations
+## Cross-Device Path Mapping
 
-### Path-Based Session Indexing
-
-Claude Code indexes project sessions by **absolute filesystem path**. This tool syncs `~/.claude/projects/` but does not perform path remapping, which means:
+Claude Code indexes project sessions by **absolute filesystem path**:
 
 ```
-/Users/alice/Projects/my-app → ~/.claude/projects/-Users-alice-Projects-my-app/
-/Users/bob/code/my-app       → ~/.claude/projects/-Users-bob-code-my-app/
+/Users/alice/my-app → ~/.claude/projects/-Users-alice-my-app/
+/Users/bob/my-app   → ~/.claude/projects/-Users-bob-my-app/
 ```
 
-These are treated as **completely different projects** by Claude Code. After syncing, `claude --resume` on machine2 won't find sessions from machine1 if the project paths differ.
+Synced verbatim, those would be **different projects** and `claude --resume` on the second machine would never find the first machine's sessions. claude-sync solves this by translating paths during sync:
 
-**Workaround:** Use consistent absolute paths across all devices. For example:
+- **Home directories are mapped automatically.** Sessions are stored remotely under a portable `${HOME}` token (in both remote keys and transcript content), then rewritten to each device's real home on pull. Different usernames across machines just work.
+- **Other layout differences are configurable.** If one machine keeps projects in `~/work` and another in `~/Projects`, point both at the same token in `~/.claude-sync/config.yaml`:
 
-- Always clone repos to `~/Projects/` on every machine
-- Use symlinks to maintain the same path structure
-- Consider a standardized home directory structure
+  ```yaml
+  # machine 1
+  path_map:
+    ~/work: WORK
+  ```
 
-If you follow a consistent path convention, sessions will sync and resume correctly across devices.
+  ```yaml
+  # machine 2
+  path_map:
+    ~/Projects: WORK
+  ```
+
+  Sessions under either directory sync to the shared `${WORK}` namespace and resume correctly on both machines.
+
+**Upgrading from an older version?** Run `claude-sync migrate` once on each device to convert existing remote data to portable keys. Paths the current device doesn't own are left for the other device's migrate run.
 
 ## Commands
 
@@ -186,6 +195,7 @@ claude-sync status      # Show pending local changes
 claude-sync diff        # Show differences between local and remote
 claude-sync conflicts   # List and resolve conflicts
 claude-sync reset       # Reset configuration (forgot passphrase)
+claude-sync migrate     # Convert legacy remote keys to portable path-mapped keys
 claude-sync update      # Update to latest version
 claude-sync changelog   # Show release history
 claude-sync --help      # Show all commands
