@@ -144,6 +144,8 @@ claude-sync pull
 | Path | Content |
 |------|---------|
 | `~/.claude/projects/` | Session files, auto-memory |
+| `~/.claude/plans/` | Implementation plans from plan mode |
+| `~/.claude/tasks/` | Task tracking state |
 | `~/.claude/history.jsonl` | Command history |
 | `~/.claude/agents/` | Custom agents |
 | `~/.claude/skills/` | Custom skills |

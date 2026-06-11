@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/tawanorg/claude-sync/compare/v1.8.1...v1.9.0) (2026-05-22)
+
+
+### Features
+
+* sync plans and tasks directories ([#28](https://github.com/tawanorg/claude-sync/issues/28)) ([a7d6e64](https://github.com/tawanorg/claude-sync/commit/a7d6e64a65b6f8982f3acb64570d6cfb250df7a2))
+
 ## [1.8.1](https://github.com/tawanorg/claude-sync/compare/v1.8.0...v1.8.1) (2026-04-06)
 
 

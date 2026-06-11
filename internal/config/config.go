@@ -61,6 +61,8 @@ var SyncPaths = []string{
 	"skills",
 	"plugins",
 	"projects",
+	"plans",
+	"tasks",
 	"history.jsonl",
 	"rules",
 }
