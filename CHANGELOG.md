@@ -1,3 +1,15 @@
+# [1.10.0](https://github.com/tawanorg/claude-sync/compare/v1.9.0...v1.10.0) (2026-06-12)
+
+
+### Bug Fixes
+
+* tighten file permissions on downloads and backups ([#24](https://github.com/tawanorg/claude-sync/issues/24)) ([a286974](https://github.com/tawanorg/claude-sync/commit/a286974239f03280b2d37cb37b1da7355a606938))
+
+
+### Features
+
+* add S3-compatible custom-endpoint provider ([#32](https://github.com/tawanorg/claude-sync/issues/32)) ([02301b5](https://github.com/tawanorg/claude-sync/commit/02301b52b9f92a41b6f0e3d6d0636c2d334b05ca))
+
 # [1.9.0](https://github.com/tawanorg/claude-sync/compare/v1.8.1...v1.9.0) (2026-05-22)
 
 
