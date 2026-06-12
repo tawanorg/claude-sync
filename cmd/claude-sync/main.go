@@ -20,6 +20,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/tawanorg/claude-sync/internal/claudesettings"
 	"github.com/tawanorg/claude-sync/internal/config"
 	"github.com/tawanorg/claude-sync/internal/crypto"
 	"github.com/tawanorg/claude-sync/internal/storage"
@@ -71,6 +72,7 @@ func main() {
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
+		autoCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -2869,4 +2871,114 @@ func runMCPPull(ctx context.Context, syncer *sync.Syncer) error {
 		}
 	}
 	return nil
+}
+
+// auto subcommand — install/remove/show claude-sync hooks in ~/.claude/settings.json
+
+func autoCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auto",
+		Short: "Manage auto-sync hooks for Claude Code",
+		Long:  `Install or remove claude-sync hooks that automatically push/pull when Claude Code sessions start and stop.`,
+	}
+	cmd.AddCommand(autoEnableCmd(), autoDisableCmd(), autoStatusCmd())
+	return cmd
+}
+
+func autoEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable",
+		Short: "Install auto-sync hooks into Claude Code settings",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, raw, err := claudesettings.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load Claude settings: %w", err)
+			}
+
+			changed := false
+			if !claudesettings.HasClaudeSyncHook(s.Hooks["SessionStart"]) {
+				s.Hooks["SessionStart"] = claudesettings.AddHook(s.Hooks["SessionStart"], "claude-sync pull -q")
+				changed = true
+			}
+			if !claudesettings.HasClaudeSyncHook(s.Hooks["Stop"]) {
+				s.Hooks["Stop"] = claudesettings.AddHook(s.Hooks["Stop"], "claude-sync push -q")
+				changed = true
+			}
+
+			if !changed {
+				fmt.Println("Auto-sync hooks already installed.")
+				return nil
+			}
+
+			if err := claudesettings.Save(s, raw); err != nil {
+				return fmt.Errorf("failed to save Claude settings: %w", err)
+			}
+
+			fmt.Println("Auto-sync hooks installed:")
+			fmt.Println("  SessionStart → claude-sync pull -q")
+			fmt.Println("  Stop → claude-sync push -q")
+			return nil
+		},
+	}
+}
+
+func autoDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Remove auto-sync hooks from Claude Code settings",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, raw, err := claudesettings.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load Claude settings: %w", err)
+			}
+
+			before := claudesettings.HasClaudeSyncHook(s.Hooks["SessionStart"]) ||
+				claudesettings.HasClaudeSyncHook(s.Hooks["Stop"])
+
+			s.Hooks["SessionStart"] = claudesettings.RemoveClaudeSyncHooks(s.Hooks["SessionStart"])
+			s.Hooks["Stop"] = claudesettings.RemoveClaudeSyncHooks(s.Hooks["Stop"])
+
+			if !before {
+				fmt.Println("Auto-sync hooks were not installed.")
+				return nil
+			}
+
+			if err := claudesettings.Save(s, raw); err != nil {
+				return fmt.Errorf("failed to save Claude settings: %w", err)
+			}
+
+			fmt.Println("Auto-sync hooks removed.")
+			return nil
+		},
+	}
+}
+
+func autoStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show auto-sync hook status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, _, err := claudesettings.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load Claude settings: %w", err)
+			}
+
+			hasStart := claudesettings.HasClaudeSyncHook(s.Hooks["SessionStart"])
+			hasStop := claudesettings.HasClaudeSyncHook(s.Hooks["Stop"])
+
+			if hasStart || hasStop {
+				fmt.Println("Auto-sync hooks: enabled")
+				if hasStart {
+					fmt.Println("  SessionStart → claude-sync pull -q")
+				}
+				if hasStop {
+					fmt.Println("  Stop → claude-sync push -q")
+				}
+			} else {
+				fmt.Println("Auto-sync hooks: not installed")
+				fmt.Println("Run 'claude-sync auto enable' to install.")
+			}
+			return nil
+		},
+	}
 }
