@@ -76,11 +76,14 @@ type StorageConfig struct {
 	WebDAVUsername string `yaml:"webdav_username,omitempty"`
 	WebDAVPassword string `yaml:"webdav_password,omitempty"`
 	PathPrefix     string `yaml:"path_prefix,omitempty"`
+
+	// Azure Blob Storage - SAS URL including container name and token
+	AzureURL string `yaml:"azure_url,omitempty"`
 }
 
 // Validate checks if the configuration is valid for the selected provider
 func (c *StorageConfig) Validate() error {
-	if c.Provider != ProviderWebDAV && c.Bucket == "" {
+	if c.Provider != ProviderWebDAV && c.Provider != ProviderAzure && c.Bucket == "" {
 		return fmt.Errorf("bucket is required")
 	}
 
@@ -93,6 +96,8 @@ func (c *StorageConfig) Validate() error {
 		return c.validateGCS()
 	case ProviderWebDAV:
 		return c.validateWebDAV()
+	case ProviderAzure:
+		return c.validateAzure()
 	case "":
 		return fmt.Errorf("provider is required")
 	default:
@@ -144,6 +149,16 @@ func (c *StorageConfig) validateWebDAV() error {
 	}
 	if c.WebDAVPassword == "" {
 		return fmt.Errorf("webdav_password is required for WebDAV")
+	}
+	return nil
+}
+
+func (c *StorageConfig) validateAzure() error {
+	if c.AzureURL == "" {
+		return fmt.Errorf("azure_url is required for Azure Blob Storage")
+	}
+	if !strings.HasPrefix(c.AzureURL, "https://") {
+		return fmt.Errorf("azure_url must start with https://")
 	}
 	return nil
 }

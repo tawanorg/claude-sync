@@ -14,6 +14,7 @@ const (
 	ProviderS3     Provider = "s3"
 	ProviderGCS    Provider = "gcs"
 	ProviderWebDAV Provider = "webdav"
+	ProviderAzure  Provider = "azure"
 )
 
 // ObjectInfo contains metadata about a stored object
@@ -63,6 +64,8 @@ func New(cfg *StorageConfig) (Storage, error) {
 		return NewGCS(cfg)
 	case ProviderWebDAV:
 		return NewWebDAV(cfg)
+	case ProviderAzure:
+		return NewAzure(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", cfg.Provider)
 	}
@@ -79,3 +82,6 @@ var NewGCS func(cfg *StorageConfig) (Storage, error)
 
 // NewWebDAV creates a new WebDAV storage adapter (implemented in webdav/webdav.go)
 var NewWebDAV func(cfg *StorageConfig) (Storage, error)
+
+// NewAzure creates a new Azure Blob Storage adapter (implemented in azure/azure.go)
+var NewAzure func(cfg *StorageConfig) (Storage, error)

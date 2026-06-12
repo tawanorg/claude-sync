@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -98,7 +99,7 @@ func TestMockStorage_BucketExists_Error(t *testing.T) {
 	if exists {
 		t.Errorf("BucketExists() = true, want false")
 	}
-	if !contains(err.Error(), "access denied") {
+	if !strings.Contains(err.Error(), "access denied") {
 		t.Errorf("BucketExists() error = %v, want error containing 'access denied'", err)
 	}
 }
@@ -159,7 +160,7 @@ func TestNew_InvalidConfig(t *testing.T) {
 				t.Errorf("New() expected error, got nil")
 				return
 			}
-			if !contains(err.Error(), tt.errMsg) {
+			if !strings.Contains(err.Error(), tt.errMsg) {
 				t.Errorf("New() error = %v, want error containing %q", err, tt.errMsg)
 			}
 		})

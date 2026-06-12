@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -205,6 +206,33 @@ func TestStorageConfig_Validate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		// Azure tests
+		{
+			name: "valid Azure config",
+			config: StorageConfig{
+				Provider: ProviderAzure,
+				AzureURL: "https://pskyops.blob.core.windows.net/claude-sync?sv=2021&sig=abc",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Azure missing URL",
+			config: StorageConfig{
+				Provider: ProviderAzure,
+				AzureURL: "",
+			},
+			wantErr: true,
+			errMsg:  "azure_url is required",
+		},
+		{
+			name: "Azure URL not https",
+			config: StorageConfig{
+				Provider: ProviderAzure,
+				AzureURL: "http://pskyops.blob.core.windows.net/claude-sync?sv=2021&sig=abc",
+			},
+			wantErr: true,
+			errMsg:  "azure_url must start with https://",
+		},
 	}
 
 	for _, tt := range tests {
@@ -215,7 +243,7 @@ func TestStorageConfig_Validate(t *testing.T) {
 					t.Errorf("Validate() expected error containing %q, got nil", tt.errMsg)
 					return
 				}
-				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("Validate() error = %v, want error containing %q", err, tt.errMsg)
 				}
 			} else {
@@ -392,16 +420,3 @@ func TestNormalizeEndpoint(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

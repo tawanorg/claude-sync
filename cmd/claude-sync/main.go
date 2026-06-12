@@ -20,6 +20,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/tawanorg/claude-sync/internal/claudesettings"
 	"github.com/tawanorg/claude-sync/internal/config"
 	"github.com/tawanorg/claude-sync/internal/crypto"
 	"github.com/tawanorg/claude-sync/internal/storage"
@@ -27,6 +28,7 @@ import (
 	"github.com/tawanorg/claude-sync/internal/util"
 
 	// Register storage adapters
+	_ "github.com/tawanorg/claude-sync/internal/storage/azure"
 	_ "github.com/tawanorg/claude-sync/internal/storage/gcs"
 	_ "github.com/tawanorg/claude-sync/internal/storage/r2"
 	_ "github.com/tawanorg/claude-sync/internal/storage/s3"
@@ -70,6 +72,7 @@ func main() {
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
+		autoCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -133,6 +136,9 @@ func initCmd() *cobra.Command {
 	// WebDAV flags
 	var webdavURL, webdavUsername, webdavPassword, webdavPathPrefix string
 
+	// Azure flags
+	var azureURL string
+
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize claude-sync configuration",
@@ -143,6 +149,7 @@ Supported providers:
   - s3:            Amazon S3
   - gcs:           Google Cloud Storage
   - s3-compatible: Any S3-compatible provider via custom endpoint (Backblaze B2, MinIO, Wasabi, ...)
+  - azure:         Azure Blob Storage (container-scoped SAS URL)
   - webdav:        WebDAV (Nextcloud, ownCloud, etc. - self-hosted)
 
 Examples:
@@ -163,7 +170,7 @@ Examples:
 			}
 
 			// Normal flow: full setup
-			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope, usePassphrase, force)
+			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, azureURL, scope, usePassphrase, force)
 		},
 	}
 
@@ -194,6 +201,9 @@ Examples:
 	cmd.Flags().StringVar(&webdavUsername, "webdav-username", "", "WebDAV username")
 	cmd.Flags().StringVar(&webdavPassword, "webdav-password", "", "WebDAV app password")
 	cmd.Flags().StringVar(&webdavPathPrefix, "webdav-path-prefix", "claude-sync", "WebDAV path prefix (subdirectory)")
+
+	// Azure flags
+	cmd.Flags().StringVar(&azureURL, "azure-url", "", "Azure Blob Storage container SAS URL (e.g. https://account.blob.core.windows.net/container?sv=...) — or set CLAUDE_SYNC_AZURE_URL env var to avoid token in shell history")
 
 	return cmd
 }
@@ -268,7 +278,7 @@ func resolveScope(scope string) (string, error) {
 }
 
 // initFullSetup handles the full init wizard
-func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope string, usePassphrase, force bool) error {
+func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, azureURL, scope string, usePassphrase, force bool) error {
 	if config.Exists() && !force {
 		var overwrite bool
 		prompt := &survey.Confirm{
@@ -294,6 +304,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 				"Amazon S3",
 				"Google Cloud Storage",
 				"S3-compatible (custom endpoint) — Backblaze B2, MinIO, Wasabi, ...",
+				"Azure Blob Storage (container SAS URL)",
 				"WebDAV (Nextcloud, ownCloud, etc. - self-hosted)",
 			},
 		}
@@ -311,6 +322,8 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 		case 3:
 			provider = "s3-compatible"
 		case 4:
+			provider = "azure"
+		case 5:
 			provider = "webdav"
 		}
 	}
@@ -328,6 +341,8 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 		storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
 	case "s3-compatible":
 		storageCfg, err = runS3CompatibleWizard(s3Endpoint, accessKey, secretKey, s3Region, bucket)
+	case "azure":
+		storageCfg, err = runAzureWizard(azureURL)
 	case "webdav":
 		storageCfg, err = runWebDAVWizard(webdavURL, webdavUsername, webdavPassword, webdavPathPrefix)
 	default:
@@ -422,15 +437,23 @@ skipKeyGen:
 
 	exists, err := store.BucketExists(ctx)
 	if err != nil {
+		if storageCfg.Provider == storage.ProviderAzure {
+			return fmt.Errorf("could not access Azure container: %w", err)
+		}
 		return fmt.Errorf("could not verify bucket '%s': %w", storageCfg.Bucket, err)
 	} else if !exists {
 		if storageCfg.Provider == storage.ProviderWebDAV {
 			return fmt.Errorf("could not access WebDAV path '%s' - check your URL and credentials", storageCfg.PathPrefix)
 		}
+		if storageCfg.Provider == storage.ProviderAzure {
+			return fmt.Errorf("could not access Azure container - check your SAS URL and permissions")
+		}
 		return fmt.Errorf("bucket '%s' does not exist. Please create it first in your storage provider's console.\n  For R2: https://dash.cloudflare.com/ → R2 → Create bucket\n  For S3: https://console.aws.amazon.com/s3/ → Create bucket (use 'automatic' location)\n  For GCS: https://console.cloud.google.com/storage/ → Create bucket", storageCfg.Bucket)
 	}
 	if storageCfg.Provider == storage.ProviderWebDAV {
 		printSuccess("Connected to WebDAV ('" + storageCfg.PathPrefix + "')")
+	} else if storageCfg.Provider == storage.ProviderAzure {
+		printSuccess("Connected to Azure Blob Storage")
 	} else {
 		printSuccess("Connected to '" + storageCfg.Bucket + "'")
 	}
@@ -990,6 +1013,39 @@ func runWebDAVWizard(webdavURL, username, password, pathPrefix string) (*storage
 	}
 
 	return cfg, nil
+}
+
+func runAzureWizard(azureURL string) (*storage.StorageConfig, error) {
+	fmt.Printf("  %sAzure Blob Storage Setup%s\n\n", colorBold, colorReset)
+	printInfo("You need a container-scoped SAS URL.")
+	fmt.Println()
+	fmt.Printf("  %sGenerate one with:%s\n", colorCyan, colorReset)
+	fmt.Println("  az storage container generate-sas \\")
+	fmt.Println("    --account-name <account> --name <container> \\")
+	fmt.Println("    --permissions racwdl --expiry 2099-01-01T00:00Z \\")
+	fmt.Println("    --auth-mode login --as-user -o tsv")
+	fmt.Println()
+	fmt.Printf("  %sThen construct:%s https://<account>.blob.core.windows.net/<container>?<token>\n", colorCyan, colorReset)
+	fmt.Println()
+
+	if azureURL == "" {
+		azureURL = os.Getenv("CLAUDE_SYNC_AZURE_URL")
+	}
+
+	if azureURL == "" {
+		prompt := &survey.Input{
+			Message: "Azure SAS URL (https://...):",
+			Help:    "Full container SAS URL including account, container name, and token.\nTip: set CLAUDE_SYNC_AZURE_URL to avoid passing this on the command line.",
+		}
+		if err := survey.AskOne(prompt, &azureURL, survey.WithValidator(survey.Required)); err != nil {
+			return nil, err
+		}
+	}
+
+	return &storage.StorageConfig{
+		Provider: storage.ProviderAzure,
+		AzureURL: azureURL,
+	}, nil
 }
 
 func pushCmd() *cobra.Command {
@@ -2815,4 +2871,114 @@ func runMCPPull(ctx context.Context, syncer *sync.Syncer) error {
 		}
 	}
 	return nil
+}
+
+// auto subcommand — install/remove/show claude-sync hooks in ~/.claude/settings.json
+
+func autoCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auto",
+		Short: "Manage auto-sync hooks for Claude Code",
+		Long:  `Install or remove claude-sync hooks that automatically push/pull when Claude Code sessions start and stop.`,
+	}
+	cmd.AddCommand(autoEnableCmd(), autoDisableCmd(), autoStatusCmd())
+	return cmd
+}
+
+func autoEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable",
+		Short: "Install auto-sync hooks into Claude Code settings",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, raw, err := claudesettings.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load Claude settings: %w", err)
+			}
+
+			changed := false
+			if !claudesettings.HasClaudeSyncHook(s.Hooks["SessionStart"]) {
+				s.Hooks["SessionStart"] = claudesettings.AddHook(s.Hooks["SessionStart"], "claude-sync pull -q")
+				changed = true
+			}
+			if !claudesettings.HasClaudeSyncHook(s.Hooks["Stop"]) {
+				s.Hooks["Stop"] = claudesettings.AddHook(s.Hooks["Stop"], "claude-sync push -q")
+				changed = true
+			}
+
+			if !changed {
+				fmt.Println("Auto-sync hooks already installed.")
+				return nil
+			}
+
+			if err := claudesettings.Save(s, raw); err != nil {
+				return fmt.Errorf("failed to save Claude settings: %w", err)
+			}
+
+			fmt.Println("Auto-sync hooks installed:")
+			fmt.Println("  SessionStart → claude-sync pull -q")
+			fmt.Println("  Stop → claude-sync push -q")
+			return nil
+		},
+	}
+}
+
+func autoDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Remove auto-sync hooks from Claude Code settings",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, raw, err := claudesettings.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load Claude settings: %w", err)
+			}
+
+			before := claudesettings.HasClaudeSyncHook(s.Hooks["SessionStart"]) ||
+				claudesettings.HasClaudeSyncHook(s.Hooks["Stop"])
+
+			s.Hooks["SessionStart"] = claudesettings.RemoveClaudeSyncHooks(s.Hooks["SessionStart"])
+			s.Hooks["Stop"] = claudesettings.RemoveClaudeSyncHooks(s.Hooks["Stop"])
+
+			if !before {
+				fmt.Println("Auto-sync hooks were not installed.")
+				return nil
+			}
+
+			if err := claudesettings.Save(s, raw); err != nil {
+				return fmt.Errorf("failed to save Claude settings: %w", err)
+			}
+
+			fmt.Println("Auto-sync hooks removed.")
+			return nil
+		},
+	}
+}
+
+func autoStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show auto-sync hook status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, _, err := claudesettings.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load Claude settings: %w", err)
+			}
+
+			hasStart := claudesettings.HasClaudeSyncHook(s.Hooks["SessionStart"])
+			hasStop := claudesettings.HasClaudeSyncHook(s.Hooks["Stop"])
+
+			if hasStart || hasStop {
+				fmt.Println("Auto-sync hooks: enabled")
+				if hasStart {
+					fmt.Println("  SessionStart → claude-sync pull -q")
+				}
+				if hasStop {
+					fmt.Println("  Stop → claude-sync push -q")
+				}
+			} else {
+				fmt.Println("Auto-sync hooks: not installed")
+				fmt.Println("Run 'claude-sync auto enable' to install.")
+			}
+			return nil
+		},
+	}
 }
