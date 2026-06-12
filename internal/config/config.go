@@ -48,6 +48,9 @@ type Config struct {
 	// or "sessions" (portable conversation data only). See ScopedSyncPaths.
 	Scope string `yaml:"scope,omitempty"`
 
+	// SyncPaths overrides the scope-based path set when non-empty.
+	SyncPaths []string `yaml:"sync_paths,omitempty"`
+
 	// MCPSync enables syncing MCP server configs from ~/.claude.json
 	MCPSync bool `yaml:"mcp_sync,omitempty"`
 
@@ -86,6 +89,7 @@ var SyncPaths = []string{
 	"tasks",
 	"history.jsonl",
 	"rules",
+	"workflows",
 }
 
 // SessionSyncPaths is the subset synced in the "sessions" scope: portable,
@@ -234,6 +238,14 @@ func (c *Config) GetStorageConfig() *storage.StorageConfig {
 // IsLegacyConfig returns true if using the legacy R2-only config format
 func (c *Config) IsLegacyConfig() bool {
 	return c.Storage == nil && c.AccountID != ""
+}
+
+// GetEffectiveSyncPaths returns the user-configured sync paths if set, otherwise the scope-based set.
+func (c *Config) GetEffectiveSyncPaths() []string {
+	if len(c.SyncPaths) > 0 {
+		return c.SyncPaths
+	}
+	return ScopedSyncPaths(c.Scope)
 }
 
 // IsExcluded returns true if the given relative path matches any exclude pattern.

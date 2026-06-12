@@ -132,10 +132,10 @@ func (s *Syncer) isExcluded(relPath string) bool {
 	return s.cfg.IsExcluded(relPath)
 }
 
-// syncPaths returns the set of ~/.claude paths to sync, honoring the
-// configured scope ("full" by default, or "sessions" for portable data only).
+// syncPaths returns the set of ~/.claude paths to sync, honoring sync_paths
+// override first, then the configured scope ("full" by default, or "sessions").
 func (s *Syncer) syncPaths() []string {
-	return config.ScopedSyncPaths(s.cfg.Scope)
+	return s.cfg.GetEffectiveSyncPaths()
 }
 
 // Scope returns the configured sync scope (empty means the default "full").
@@ -155,6 +155,7 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 	s.progress(ProgressEvent{Action: "scan", Path: "Detecting changes..."})
 
 	changes, err := s.state.DetectChanges(s.claudeDir, s.syncPaths(), s.isExcluded)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect changes: %w", err)
 	}
@@ -271,6 +272,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 
 	// Get current local files
 	localFiles, err := GetLocalFiles(s.claudeDir, s.syncPaths(), s.isExcluded)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
@@ -375,6 +377,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 
 func (s *Syncer) Status(ctx context.Context) ([]FileChange, error) {
 	return s.state.DetectChanges(s.claudeDir, s.syncPaths(), s.isExcluded)
+
 }
 
 func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
@@ -573,6 +576,7 @@ func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
 
 	// Get current local files
 	localFiles, err := GetLocalFiles(s.claudeDir, s.syncPaths(), s.isExcluded)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
@@ -652,6 +656,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 
 	// Get local files
 	localFiles, err := GetLocalFiles(s.claudeDir, s.syncPaths(), s.isExcluded)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}

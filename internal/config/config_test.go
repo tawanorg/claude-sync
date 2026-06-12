@@ -232,6 +232,26 @@ func TestSyncPaths(t *testing.T) {
 	}
 }
 
+func TestGetEffectiveSyncPaths(t *testing.T) {
+	// Empty SyncPaths → returns SyncPaths
+	cfg := &Config{}
+	got := cfg.GetEffectiveSyncPaths()
+	if len(got) != len(SyncPaths) {
+		t.Errorf("expected %d paths, got %d", len(SyncPaths), len(got))
+	}
+
+	// Custom SyncPaths → returns custom list
+	custom := []string{"CLAUDE.md", "settings.json"}
+	cfg.SyncPaths = custom
+	got = cfg.GetEffectiveSyncPaths()
+	if len(got) != len(custom) {
+		t.Errorf("expected %d paths, got %d", len(custom), len(got))
+	}
+	if got[0] != "CLAUDE.md" || got[1] != "settings.json" {
+		t.Errorf("unexpected paths: %v", got)
+	}
+}
+
 func TestClaudeJSONPath(t *testing.T) {
 	path := ClaudeJSONPath()
 	if path == "" {

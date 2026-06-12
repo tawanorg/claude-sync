@@ -70,6 +70,7 @@ func main() {
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
+		pathsCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -283,7 +284,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 	}
 
 	// Step 1: Select provider
-	printStep(1, 3, "Select Storage Provider")
+	printStep(1, 4, "Select Storage Provider")
 	fmt.Println()
 
 	if provider == "" {
@@ -343,7 +344,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 
 	// Step 2: Encryption setup
 	fmt.Println()
-	printStep(2, 3, "Set Up Encryption")
+	printStep(2, 4, "Set Up Encryption")
 	printInfo("Files are encrypted with 'age' before upload.")
 	fmt.Println()
 
@@ -418,7 +419,7 @@ skipKeyGen:
 
 	// Step 3: Test Connection
 	fmt.Println()
-	printStep(3, 3, "Test Connection")
+	printStep(3, 4, "Test Connection")
 
 	exists, err := store.BucketExists(ctx)
 	if err != nil {
@@ -1135,7 +1136,7 @@ Examples:
 				}
 
 				if hasExisting && !force {
-					return handleFirstPullWithExistingFiles(ctx, syncer, dryRun)
+					return handleFirstPullWithExistingFiles(ctx, syncer, dryRun, cfg.GetEffectiveSyncPaths())
 				}
 			}
 
@@ -2225,7 +2226,7 @@ func hasExistingClaudeFiles(scope string) (bool, error) {
 
 // handleFirstPullWithExistingFiles handles the case where the user is pulling
 // for the first time but already has local files that could be overwritten
-func handleFirstPullWithExistingFiles(ctx context.Context, syncer *sync.Syncer, dryRun bool) error {
+func handleFirstPullWithExistingFiles(ctx context.Context, syncer *sync.Syncer, dryRun bool, syncPaths []string) error {
 	// Get preview of what would happen
 	preview, err := syncer.PreviewPull(ctx)
 	if err != nil {
@@ -2299,7 +2300,7 @@ func handleFirstPullWithExistingFiles(ctx context.Context, syncer *sync.Syncer, 
 	switch choice {
 	case 0:
 		// Backup and proceed
-		backupDir, err := createBackup(syncer.Scope())
+		backupDir, err := createBackup(syncPaths)
 		if err != nil {
 			return fmt.Errorf("failed to create backup: %w", err)
 		}
@@ -2320,7 +2321,7 @@ func handleFirstPullWithExistingFiles(ctx context.Context, syncer *sync.Syncer, 
 }
 
 // createBackup creates a backup of the current ~/.claude directory
-func createBackup(scope string) (string, error) {
+func createBackup(syncPaths []string) (string, error) {
 	claudeDir := config.ClaudeDir()
 	timestamp := time.Now().Format("20060102-150405")
 	backupDir := claudeDir + ".backup." + timestamp
@@ -2331,7 +2332,7 @@ func createBackup(scope string) (string, error) {
 	}
 
 	// Copy all syncable files to backup
-	files, err := sync.GetLocalFiles(claudeDir, config.ScopedSyncPaths(scope))
+	files, err := sync.GetLocalFiles(claudeDir, syncPaths)
 	if err != nil {
 		return "", fmt.Errorf("failed to list files: %w", err)
 	}
@@ -2771,6 +2772,322 @@ func runMCPPush(ctx context.Context, syncer *sync.Syncer) error {
 		}
 	}
 	return nil
+}
+
+func pathsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "paths",
+		Short: "Manage sync paths",
+		Long:  "List, add, remove, or reset the paths synced under ~/.claude.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPathsList()
+		},
+	}
+	cmd.AddCommand(
+		pathsListCmd(),
+		pathsAddCmd(),
+		pathsRemoveCmd(),
+		pathsEditCmd(),
+		pathsResetCmd(),
+		pathsExcludeCmd(),
+	)
+	return cmd
+}
+
+func pathsListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List configured sync paths",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPathsList()
+		},
+	}
+}
+
+func runPathsList() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	paths := cfg.GetEffectiveSyncPaths()
+	source := "default"
+	if len(cfg.SyncPaths) > 0 {
+		source = "config.yaml"
+	}
+
+	fmt.Printf("\n%sSync Paths%s (%s):\n", colorBold, colorReset, source)
+	for _, p := range paths {
+		fmt.Printf("  %s+%s %s\n", colorGreen, colorReset, p)
+	}
+
+	if len(cfg.Exclude) > 0 {
+		fmt.Printf("\n%sExclude Patterns%s:\n", colorBold, colorReset)
+		for _, p := range cfg.Exclude {
+			fmt.Printf("  %s-%s %s\n", colorYellow, colorReset, p)
+		}
+	}
+	fmt.Println()
+	return nil
+}
+
+func pathsAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <path>",
+		Short: "Add a path to the sync list",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			newPath := args[0]
+
+			// Start from effective paths so we don't lose defaults when first customizing
+			effective := cfg.GetEffectiveSyncPaths()
+			for _, p := range effective {
+				if p == newPath {
+					fmt.Printf("%s! %s%s is already in the sync list\n", colorYellow, newPath, colorReset)
+					return nil
+				}
+			}
+
+			claudeDir := config.ClaudeDir()
+			if _, err := os.Stat(filepath.Join(claudeDir, newPath)); os.IsNotExist(err) {
+				fmt.Printf("%s! %s%s does not exist under ~/.claude (adding anyway)\n", colorYellow, newPath, colorReset)
+			}
+
+			cfg.SyncPaths = append(effective, newPath)
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s Added %s to sync paths\n", colorGreen, colorReset, newPath)
+			return nil
+		},
+	}
+}
+
+func pathsRemoveCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "remove <path>",
+		Short: "Remove a path from the sync list",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			target := args[0]
+			effective := cfg.GetEffectiveSyncPaths()
+
+			found := false
+			for _, p := range effective {
+				if p == target {
+					found = true
+					break
+				}
+			}
+			if !found {
+				fmt.Printf("%s! %s%s is not in the sync list\n", colorYellow, target, colorReset)
+				return nil
+			}
+
+			if !force {
+				var confirm bool
+				prompt := &survey.Confirm{
+					Message: fmt.Sprintf("%q path listesinden kaldırılacak. Devam?", target),
+					Default: false,
+				}
+				if err := survey.AskOne(prompt, &confirm); err != nil || !confirm {
+					fmt.Println("  İptal edildi.")
+					return nil
+				}
+			}
+
+			newPaths := make([]string, 0, len(effective)-1)
+			for _, p := range effective {
+				if p != target {
+					newPaths = append(newPaths, p)
+				}
+			}
+			cfg.SyncPaths = newPaths
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s Removed %s from sync paths\n", colorGreen, colorReset, target)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+	return cmd
+}
+
+func pathsEditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "edit",
+		Short: "Interactively edit sync paths",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			effective := cfg.GetEffectiveSyncPaths()
+
+			var selected []string
+			prompt := &survey.MultiSelect{
+				Message: "Sync edilecek path'leri seç (space ile seç/kaldır):",
+				Options: effective,
+				Default: effective,
+			}
+			if err := survey.AskOne(prompt, &selected); err != nil {
+				return err
+			}
+
+			cfg.SyncPaths = selected
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s Sync paths güncellendi (%d path)\n", colorGreen, colorReset, len(selected))
+			return nil
+		},
+	}
+}
+
+func pathsResetCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Reset sync paths to defaults",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			if !force {
+				var confirm bool
+				prompt := &survey.Confirm{
+					Message: "sync_paths ve exclude ayarları sıfırlanacak, DefaultSyncPaths devreye girecek. Devam?",
+					Default: false,
+				}
+				if err := survey.AskOne(prompt, &confirm); err != nil || !confirm {
+					fmt.Println("  İptal edildi.")
+					return nil
+				}
+			}
+
+			cfg.SyncPaths = nil
+			cfg.Exclude = nil
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s Sync paths sıfırlandı (DefaultSyncPaths aktif)\n", colorGreen, colorReset)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+	return cmd
+}
+
+func pathsExcludeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "exclude",
+		Short: "Manage exclude patterns",
+	}
+	cmd.AddCommand(
+		pathsExcludeListCmd(),
+		pathsExcludeAddCmd(),
+		pathsExcludeRemoveCmd(),
+	)
+	return cmd
+}
+
+func pathsExcludeListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List exclude patterns",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			if len(cfg.Exclude) == 0 {
+				fmt.Println("  (exclude pattern yok)")
+				return nil
+			}
+			fmt.Printf("\n%sExclude Patterns%s:\n", colorBold, colorReset)
+			for _, p := range cfg.Exclude {
+				fmt.Printf("  %s-%s %s\n", colorYellow, colorReset, p)
+			}
+			fmt.Println()
+			return nil
+		},
+	}
+}
+
+func pathsExcludeAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <pattern>",
+		Short: "Add an exclude pattern",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			pattern := args[0]
+			for _, p := range cfg.Exclude {
+				if p == pattern {
+					fmt.Printf("%s! %s%s zaten exclude listesinde\n", colorYellow, pattern, colorReset)
+					return nil
+				}
+			}
+			cfg.Exclude = append(cfg.Exclude, pattern)
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s Exclude pattern eklendi: %s\n", colorGreen, colorReset, pattern)
+			return nil
+		},
+	}
+}
+
+func pathsExcludeRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <pattern>",
+		Short: "Remove an exclude pattern",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			pattern := args[0]
+			newExclude := make([]string, 0, len(cfg.Exclude))
+			found := false
+			for _, p := range cfg.Exclude {
+				if p == pattern {
+					found = true
+					continue
+				}
+				newExclude = append(newExclude, p)
+			}
+			if !found {
+				fmt.Printf("%s! %s%s exclude listesinde bulunamadı\n", colorYellow, pattern, colorReset)
+				return nil
+			}
+			cfg.Exclude = newExclude
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s Exclude pattern kaldırıldı: %s\n", colorGreen, colorReset, pattern)
+			return nil
+		},
+	}
 }
 
 func runMCPPull(ctx context.Context, syncer *sync.Syncer) error {
