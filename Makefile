@@ -36,7 +36,7 @@ lint:
 	golangci-lint run
 
 # Build for multiple platforms
-build-all: build-darwin build-linux
+build-all: build-darwin build-linux build-windows
 	cd $(BUILD_DIR) && shasum -a 256 $(BINARY_NAME)-* > checksums.txt
 
 build-darwin:
@@ -46,6 +46,10 @@ build-darwin:
 build-linux:
 	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/claude-sync
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/claude-sync
+
+build-windows:
+	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/claude-sync
+	GOOS=windows GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe ./cmd/claude-sync
 
 # Development: build and run
 run: build

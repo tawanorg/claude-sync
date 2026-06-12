@@ -11,7 +11,7 @@
 [![npm](https://img.shields.io/npm/v/@tawandotorg/claude-sync)](https://www.npmjs.com/package/@tawandotorg/claude-sync)
 [![Socket Badge](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.8.0)](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.8.0)
 
-[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Auto-Sync](#auto-sync-hooks) • [Security](#security)
+[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Shell Integration](#shell-integration) • [Security](#security)
 
 </div>
 
@@ -27,7 +27,7 @@
 - **Self-updating**: `claude-sync update` to get the latest version
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
 - **Compression**: Gzip compression before encryption for faster syncs
-- **Auto-sync hooks**: Optional Claude Code hooks for automatic push/pull
+- **Shell integration**: Optional shell hooks for automatic push/pull
 
 <div align="center">
 <img src="assets/claude-sync.gif" alt="Claude Sync Demo" width="100%">
@@ -283,20 +283,6 @@ claude-sync update           # Download and install latest version
 claude-sync changelog            # Show recent releases
 claude-sync changelog --limit 5  # Show last 5 releases
 ```
-
-## Auto-Sync Hooks
-
-Automatically sync when starting or exiting Claude Code sessions using built-in hooks.
-
-```bash
-claude-sync auto enable   # Install auto-sync hooks into Claude Code
-claude-sync auto disable  # Remove auto-sync hooks
-claude-sync auto status   # Show current hook status
-```
-
-When enabled, hooks will:
-- **SessionStart**: Pull latest changes from remote
-- **Stop**: Push local changes to remote
 
 ## Exclude Patterns
 
