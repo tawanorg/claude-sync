@@ -130,7 +130,13 @@ func (a *AzureProvider) Head(ctx context.Context, key string) (*storage.ObjectIn
 }
 
 func (a *AzureProvider) BucketExists(ctx context.Context) (bool, error) {
-	_, err := a.client.GetProperties(ctx, nil)
+	// GetContainerProperties is not authorized by container-scoped SAS.
+	// Use ListBlobs (authorized via 'l' permission) to verify the container exists.
+	maxResults := int32(1)
+	pager := a.client.NewListBlobsFlatPager(&acontainer.ListBlobsFlatOptions{
+		MaxResults: &maxResults,
+	})
+	_, err := pager.NextPage(ctx)
 	if err != nil {
 		if is404(err) {
 			return false, nil
