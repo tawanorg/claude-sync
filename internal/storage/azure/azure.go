@@ -47,13 +47,16 @@ func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 
 func (a *AzureProvider) Upload(ctx context.Context, key string, data []byte) error {
 	_, err := a.client.NewBlockBlobClient(key).UploadBuffer(ctx, data, nil)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to upload %s: %w", key, err)
+	}
+	return nil
 }
 
 func (a *AzureProvider) Download(ctx context.Context, key string) ([]byte, error) {
 	resp, err := a.client.NewBlobClient(key).DownloadStream(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to download %s: %w", key, err)
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
@@ -61,13 +64,19 @@ func (a *AzureProvider) Download(ctx context.Context, key string) ([]byte, error
 
 func (a *AzureProvider) Delete(ctx context.Context, key string) error {
 	_, err := a.client.NewBlobClient(key).Delete(ctx, nil)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete %s: %w", key, err)
+	}
+	return nil
 }
 
 func (a *AzureProvider) DeleteBatch(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
 	for _, key := range keys {
 		if err := a.Delete(ctx, key); err != nil {
-			return fmt.Errorf("deleting %s: %w", key, err)
+			return err
 		}
 	}
 	return nil
@@ -126,7 +135,7 @@ func (a *AzureProvider) BucketExists(ctx context.Context) (bool, error) {
 		if is404(err) {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("failed to check container: %w", err)
 	}
 	return true, nil
 }
