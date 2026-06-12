@@ -31,6 +31,9 @@ func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid azure_url: %w", err)
 	}
+	if parsed.Host == "" {
+		return nil, errors.New("azure_url must include a valid hostname")
+	}
 	containerName := strings.TrimPrefix(parsed.Path, "/")
 	if idx := strings.Index(containerName, "/"); idx != -1 {
 		containerName = containerName[:idx]

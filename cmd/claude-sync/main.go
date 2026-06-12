@@ -201,7 +201,7 @@ Examples:
 	cmd.Flags().StringVar(&webdavPathPrefix, "webdav-path-prefix", "claude-sync", "WebDAV path prefix (subdirectory)")
 
 	// Azure flags
-	cmd.Flags().StringVar(&azureURL, "azure-url", "", "Azure Blob Storage container SAS URL (e.g. https://account.blob.core.windows.net/container?sv=...)")
+	cmd.Flags().StringVar(&azureURL, "azure-url", "", "Azure Blob Storage container SAS URL (e.g. https://account.blob.core.windows.net/container?sv=...) — or set CLAUDE_SYNC_AZURE_URL env var to avoid token in shell history")
 
 	return cmd
 }
@@ -1027,9 +1027,13 @@ func runAzureWizard(azureURL string) (*storage.StorageConfig, error) {
 	fmt.Println()
 
 	if azureURL == "" {
+		azureURL = os.Getenv("CLAUDE_SYNC_AZURE_URL")
+	}
+
+	if azureURL == "" {
 		prompt := &survey.Input{
 			Message: "Azure SAS URL (https://...):",
-			Help:    "Full container SAS URL including account, container name, and token",
+			Help:    "Full container SAS URL including account, container name, and token.\nTip: set CLAUDE_SYNC_AZURE_URL to avoid passing this on the command line.",
 		}
 		if err := survey.AskOne(prompt, &azureURL, survey.WithValidator(survey.Required)); err != nil {
 			return nil, err
