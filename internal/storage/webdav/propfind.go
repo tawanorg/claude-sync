@@ -8,12 +8,12 @@ import (
 )
 
 type propfindMultistatus struct {
-	XMLName   xml.Name             `xml:"multistatus"`
-	Responses []propfindRespEntry  `xml:"response"`
+	XMLName   xml.Name            `xml:"multistatus"`
+	Responses []propfindRespEntry `xml:"response"`
 }
 
 type propfindRespEntry struct {
-	Href     string            `xml:"href"`
+	Href     string             `xml:"href"`
 	Propstat []propfindPropstat `xml:"propstat"`
 }
 

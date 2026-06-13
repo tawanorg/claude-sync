@@ -1,3 +1,25 @@
+## [1.11.1](https://github.com/tawanorg/claude-sync/compare/v1.11.0...v1.11.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* handle error return values from w.Write in tests ([115951c](https://github.com/tawanorg/claude-sync/commit/115951cf9007ca73ba565726a760ba71ad3ce2eb))
+
+# [1.11.0](https://github.com/tawanorg/claude-sync/compare/v1.10.0...v1.11.0) (2026-06-12)
+
+
+### Bug Fixes
+
+* add Windows build targets and remove non-existent auto command docs ([a31c7ec](https://github.com/tawanorg/claude-sync/commit/a31c7ec8e24967942d5d5800cd0d3d3fa84232ac)), closes [#26](https://github.com/tawanorg/claude-sync/issues/26) [#31](https://github.com/tawanorg/claude-sync/issues/31)
+* pass scope argument to createBackup in test and fix formatting ([36aba1a](https://github.com/tawanorg/claude-sync/commit/36aba1a428f428071052a6cf195eb13360a8aa6d))
+
+
+### Features
+
+* add --scope to sync only portable session data (skip plugins/node_modules) ([#33](https://github.com/tawanorg/claude-sync/issues/33)) ([3265553](https://github.com/tawanorg/claude-sync/commit/32655534e2f6c2cc1298da44cac2e9b0112fc582))
+* add WebDAV storage provider (Nextcloud, ownCloud) ([#25](https://github.com/tawanorg/claude-sync/issues/25)) ([360e309](https://github.com/tawanorg/claude-sync/commit/360e309ad4341a669c8fdacefa70f0a9d5814aae))
+* verify sha256 checksums when self-updating ([#36](https://github.com/tawanorg/claude-sync/issues/36)) ([9a58bf7](https://github.com/tawanorg/claude-sync/commit/9a58bf78bc9c1b12036b5531f6ff9c8aff9ad65b))
+
 # [1.10.0](https://github.com/tawanorg/claude-sync/compare/v1.9.0...v1.10.0) (2026-06-12)
 
 

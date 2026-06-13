@@ -9,9 +9,9 @@
 [![Release](https://img.shields.io/github/v/release/tawanorg/claude-sync)](https://github.com/tawanorg/claude-sync/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@tawandotorg/claude-sync)](https://www.npmjs.com/package/@tawandotorg/claude-sync)
-[![Socket Badge](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.8.0)](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.8.0)
+[![Socket Badge](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.11.1)](https://badge.socket.dev/npm/package/@tawandotorg/claude-sync/1.11.1)
 
-[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Auto-Sync](#auto-sync-hooks) • [Security](#security)
+[Quick Start](#quick-start) • [Setup Guide](#setup-guide) • [Commands](#commands) • [Shell Integration](#shell-integration) • [Security](#security)
 
 </div>
 
@@ -20,14 +20,15 @@
 ## Features
 
 - **Cross-device sync**: Continue Claude Code conversations on any laptop
-- **Multi-provider storage**: Cloudflare R2, AWS S3, Google Cloud Storage, or WebDAV (Nextcloud, ownCloud)
+- **Multi-provider storage**: Cloudflare R2, AWS S3, Google Cloud Storage, S3-compatible (Backblaze B2, MinIO, Wasabi), or WebDAV (Nextcloud, ownCloud)
 - **End-to-end encryption**: All files encrypted with age before upload
 - **Passphrase-based keys**: Same passphrase = same key on any device (no file copying)
+- **Selective sync**: Choose `--scope sessions` to sync only conversation data (skip plugins/node_modules)
 - **Interactive wizard**: Arrow-key driven setup with validation
-- **Self-updating**: `claude-sync update` to get the latest version
+- **Secure self-updating**: `claude-sync update` downloads and verifies SHA256 checksums
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
 - **Compression**: Gzip compression before encryption for faster syncs
-- **Auto-sync hooks**: Optional Claude Code hooks for automatic push/pull
+- **Shell integration**: Optional shell hooks for automatic push/pull
 
 <div align="center">
 <img src="assets/claude-sync.gif" alt="Claude Sync Demo" width="100%">
@@ -443,7 +444,8 @@ claude-sync push             # Re-upload from this device
 - Passphrase-derived keys use Argon2 (memory-hard KDF)
 - Passphrase is never stored - only the derived key at `~/.claude-sync/age-key.txt`
 - Cloud storage is private (API key/IAM auth)
-- Config files stored with 0600 permissions
+- Config files and downloads stored with 0600/0700 permissions (user-only)
+- Self-update verifies SHA256 checksums before installing new binaries
 - Backward compatible: can read both compressed and uncompressed remote files
 
 ## Cost
