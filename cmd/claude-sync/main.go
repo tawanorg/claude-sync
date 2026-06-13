@@ -1086,7 +1086,7 @@ func pushCmd() *cobra.Command {
 			}
 
 			// MCP sync if enabled
-			if includeMCP || cfg.MCPSync {
+			if includeMCP || (cfg.MCPSync != nil && *cfg.MCPSync) {
 				if err := runMCPPush(ctx, syncer); err != nil {
 					return err
 				}
@@ -1224,7 +1224,7 @@ Examples:
 			}
 
 			// MCP sync if enabled
-			if includeMCP || cfg.MCPSync {
+			if includeMCP || (cfg.MCPSync != nil && *cfg.MCPSync) {
 				if err := runMCPPull(ctx, syncer); err != nil {
 					return err
 				}
@@ -2664,6 +2664,7 @@ func mcpCmd() *cobra.Command {
 		Long: `Sync global MCP server configurations from ~/.claude.json across devices.`,
 	}
 	cmd.AddCommand(
+		mcpStatusCmd(),
 		mcpListCmd(),
 		mcpPushCmd(),
 		mcpPullCmd(),
@@ -2671,6 +2672,55 @@ func mcpCmd() *cobra.Command {
 		mcpDisableCmd(),
 	)
 	return cmd
+}
+
+func mcpStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show MCP sync settings and local server state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			// Auto-sync setting
+			autoSync := cfg.MCPSync != nil && *cfg.MCPSync
+			if autoSync {
+				fmt.Printf("  Auto-sync  %s✓ enabled%s  (included in every push/pull)\n", colorGreen, colorReset)
+			} else {
+				fmt.Printf("  Auto-sync  %s✗ disabled%s  (use --include-mcp or 'mcp push/pull')\n", colorDim, colorReset)
+			}
+
+			// Local server count + pending changes
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+			ctx := context.Background()
+			status, err := syncer.MCPStatus(ctx)
+			if err != nil {
+				return err
+			}
+
+			if status.ServerCount == 0 {
+				fmt.Printf("  Servers    %s0 servers%s in %s\n", colorDim, colorReset, config.ClaudeJSONPath())
+			} else {
+				fmt.Printf("  Servers    %d configured\n", status.ServerCount)
+			}
+
+			if status.HasChanges {
+				fmt.Printf("  Changes    %s● unpushed local changes%s\n", colorYellow, colorReset)
+			} else {
+				fmt.Printf("  Changes    %s✓ in sync%s\n", colorGreen, colorReset)
+			}
+
+			fmt.Printf("\n  %smcp enable%s   — auto-include in every push/pull\n", colorDim, colorReset)
+			fmt.Printf("  %smcp disable%s  — manual only\n", colorDim, colorReset)
+
+			return nil
+		},
+	}
 }
 
 func mcpListCmd() *cobra.Command {
@@ -2762,18 +2812,25 @@ func mcpPullCmd() *cobra.Command {
 func mcpEnableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "enable",
-		Short: "Enable automatic MCP sync on every push/pull",
+		Short: "Enable automatic MCP sync on every push/pull (syncs now too)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
-			cfg.MCPSync = true
+			t := true
+			cfg.MCPSync = &t
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s MCP sync enabled. MCP servers will be synced automatically on every push/pull.\n", colorGreen, colorReset)
-			return nil
+			fmt.Printf("%s✓%s MCP auto-sync enabled.\n", colorGreen, colorReset)
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+			ctx := context.Background()
+			return runMCPPush(ctx, syncer)
 		},
 	}
 }
@@ -2787,7 +2844,8 @@ func mcpDisableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg.MCPSync = false
+			f := false
+			cfg.MCPSync = &f
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
@@ -2817,8 +2875,69 @@ func runMCPPush(ctx context.Context, syncer *sync.Syncer) error {
 func pathsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "paths",
-		Short: "Manage sync paths",
-		Long:  "Manage which paths under ~/.claude/ are synced to cloud storage.\n\nUse subcommands to list, add, remove, edit, or reset sync paths,\nand to configure exclude patterns that skip certain files or directories.",
+		Short: "Manage sync paths and sub-path filters",
+		Long: `Manage which paths under ~/.claude/ are synced to cloud storage.
+
+HOW IT WORKS
+  Effective sync = sync_list − exclude_list
+
+  sync_list    built-in defaults + custom additions
+  exclude_list sub-path glob filters (block files inside a synced dir)
+
+  A path not in sync_list is never synced — no exclude needed.
+  A path in sync_list but matched by an exclude glob is skipped.
+
+REMOVING A DEFAULT PATH
+  Use 'paths remove'. It removes the path from sync_list AND adds it
+  to exclude so 'paths reset' never silently re-includes it.
+  Use 'paths add' to reverse this.
+
+EXCLUDE IS FOR SUB-PATH FILTERS ONLY
+  Use 'paths exclude' only to skip files or globs inside an
+  already-synced directory. Do not use it to remove a top-level path.
+
+    plugins/**/node_modules/**   skip node_modules inside plugins/
+    projects/my-app/**.secret    skip .secret files in one project
+
+  Glob syntax:
+    file.txt    exact relative path
+    dir/*       direct children of a directory
+    dir/**      all files recursively under a directory
+    **/*.ext    any matching file anywhere under a sync path
+
+SUBCOMMANDS
+  list                  Active defaults, removed defaults, custom, filters
+  add <path>            Add custom path or re-enable a removed default
+  remove <path>         Smart: default→excluded, custom→deleted  [-f]
+  exclude <glob>        Add a sub-path glob filter
+  unexclude <glob>      Remove a sub-path glob filter
+  edit                  Interactive multi-select for sync paths
+  reset                 Restore defaults, clear custom paths and filters [-f]
+
+EXAMPLES
+  # See full sync state
+  claude-sync paths
+
+  # Stop syncing history (stays off after reset too)
+  claude-sync paths remove history.jsonl
+
+  # Re-enable history
+  claude-sync paths add history.jsonl
+
+  # Add a custom directory
+  claude-sync paths add my-notes
+
+  # Skip node_modules inside plugins/
+  claude-sync paths exclude "plugins/**/node_modules/**"
+
+  # Remove that filter
+  claude-sync paths unexclude "plugins/**/node_modules/**"
+
+  # Reset to factory defaults
+  claude-sync paths reset`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPathsList()
+		},
 	}
 	cmd.AddCommand(
 		pathsListCmd(),
@@ -2827,14 +2946,16 @@ func pathsCmd() *cobra.Command {
 		pathsEditCmd(),
 		pathsResetCmd(),
 		pathsExcludeCmd(),
+		pathsUnexcludeCmd(),
 	)
 	return cmd
 }
 
 func pathsListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List configured sync paths",
+		Use:     "list",
+		Short:   "Show sync state: active, removed defaults, custom, filters",
+		Example: "  claude-sync paths list",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPathsList()
 		},
@@ -2847,51 +2968,23 @@ func runPathsList() error {
 		return err
 	}
 
-	// Build a set of excluded base paths (strip /* and /**)
-	excludedBases := make(map[string]struct{}, len(cfg.Exclude))
-	for _, e := range cfg.Exclude {
-		base := strings.TrimSuffix(strings.TrimSuffix(e, "/**"), "/*")
-		excludedBases[base] = struct{}{}
-		excludedBases[e] = struct{}{} // also exact match (e.g. "history.jsonl")
-	}
-
-	// Remove sync paths that are covered by an exclude
-	allPaths := cfg.GetEffectiveSyncPaths()
-	var activePaths []string
-	var removedFromSync []string
-	for _, p := range allPaths {
-		if _, excluded := excludedBases[p]; excluded {
-			removedFromSync = append(removedFromSync, p)
-			continue
-		}
-		activePaths = append(activePaths, p)
-	}
-
-	if len(removedFromSync) > 0 {
-		cfg.SyncPaths = activePaths
-		if err := config.Save(cfg); err != nil {
-			return err
-		}
-		fmt.Printf("%s✓%s Removed from sync paths (covered by exclude): %s\n", colorGreen, colorReset, strings.Join(removedFromSync, ", "))
-	}
-
-	paths := activePaths
 	source := "default"
 	if len(cfg.SyncPaths) > 0 {
 		source = "config.yaml"
 	}
 
 	fmt.Printf("\n%sSync Paths%s (%s):\n", colorBold, colorReset, source)
-	for _, p := range paths {
+	for _, p := range cfg.GetEffectiveSyncPaths() {
 		fmt.Printf("  %s+%s %s\n", colorGreen, colorReset, p)
 	}
 
 	if len(cfg.Exclude) > 0 {
-		fmt.Printf("\n%sExclude Patterns%s:\n", colorBold, colorReset)
+		fmt.Printf("\n%sExclude%s:\n", colorBold, colorReset)
 		for _, p := range cfg.Exclude {
 			fmt.Printf("  %s-%s %s\n", colorYellow, colorReset, p)
 		}
 	}
+
 	fmt.Println()
 	return nil
 }
@@ -2899,8 +2992,17 @@ func runPathsList() error {
 func pathsAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add <path>",
-		Short: "Add a path to the sync list",
-		Args:  cobra.ExactArgs(1),
+		Short: "Add a path to sync, or re-enable a removed default",
+		Long: `Add a relative path under ~/.claude/ to the sync list.
+
+If the path was previously removed (and added to exclude), the
+conflicting exclude entry is automatically cleaned up so the path
+is actually synced again.
+
+The path does not have to exist yet — it is picked up on the next push.`,
+		Example: `  claude-sync paths add my-notes
+  claude-sync paths add history.jsonl`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -2909,18 +3011,17 @@ func pathsAddCmd() *cobra.Command {
 
 			newPath := args[0]
 
-			// Start from effective paths so we don't lose defaults when first customizing
 			effective := cfg.GetEffectiveSyncPaths()
 			for _, p := range effective {
 				if p == newPath {
-					fmt.Printf("%s! %s%s is already in the sync list\n", colorYellow, newPath, colorReset)
+					fmt.Printf("%s!%s %s is already in the sync list\n", colorYellow, colorReset, newPath)
 					return nil
 				}
 			}
 
 			claudeDir := config.ClaudeDir()
 			if _, err := os.Stat(filepath.Join(claudeDir, newPath)); os.IsNotExist(err) {
-				fmt.Printf("%s! %s%s does not exist under ~/.claude (adding anyway)\n", colorYellow, newPath, colorReset)
+				fmt.Printf("%s!%s %s does not exist under ~/.claude (adding anyway)\n", colorYellow, colorReset, newPath)
 			}
 
 			cfg.SyncPaths = append(effective, newPath)
@@ -2929,7 +3030,8 @@ func pathsAddCmd() *cobra.Command {
 			filtered := cfg.Exclude[:0:0]
 			removed := 0
 			for _, e := range cfg.Exclude {
-				if e == newPath || e == newPath+"/*" || e == newPath+"/**" {
+				base := strings.TrimSuffix(strings.TrimSuffix(e, "/**"), "/*")
+				if base == newPath || e == newPath {
 					removed++
 					continue
 				}
@@ -2940,9 +3042,9 @@ func pathsAddCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s Added %s to sync paths\n", colorGreen, colorReset, newPath)
+			fmt.Printf("%s✓%s Added %s to sync\n", colorGreen, colorReset, newPath)
 			if removed > 0 {
-				fmt.Printf("%s✓%s Removed %d conflicting exclude pattern(s) for %s\n", colorGreen, colorReset, removed, newPath)
+				fmt.Printf("%s✓%s Removed %d conflicting exclude(s) for %s\n", colorGreen, colorReset, removed, newPath)
 			}
 			return nil
 		},
@@ -2953,8 +3055,19 @@ func pathsRemoveCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "remove <path>",
-		Short: "Remove a path from the sync list",
-		Args:  cobra.ExactArgs(1),
+		Short: "Remove a path from sync (smart: default→excluded, custom→deleted)",
+		Long: `Remove a path from the sync list.
+
+Default paths: removed from sync AND added to the exclude list so
+  that 'paths reset' never silently re-includes them.
+Custom paths:  simply deleted from the sync list — no exclude needed
+  since they were never part of the defaults.
+
+Use 'paths add <path>' to reverse a removal.
+Use --force (-f) to skip the confirmation prompt.`,
+		Example: `  claude-sync paths remove history.jsonl
+  claude-sync paths remove my-notes --force`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -2972,18 +3085,18 @@ func pathsRemoveCmd() *cobra.Command {
 				}
 			}
 			if !found {
-				fmt.Printf("%s! %s%s is not in the sync list\n", colorYellow, target, colorReset)
+				fmt.Printf("%s!%s %s is not in the sync list\n", colorYellow, colorReset, target)
 				return nil
 			}
 
 			if !force {
 				var confirm bool
 				prompt := &survey.Confirm{
-					Message: fmt.Sprintf("%q path listesinden kaldırılacak. Devam?", target),
+					Message: fmt.Sprintf("Remove %q from sync?", target),
 					Default: false,
 				}
 				if err := survey.AskOne(prompt, &confirm); err != nil || !confirm {
-					fmt.Println("  İptal edildi.")
+					fmt.Println("  Cancelled.")
 					return nil
 				}
 			}
@@ -2996,29 +3109,38 @@ func pathsRemoveCmd() *cobra.Command {
 			}
 			cfg.SyncPaths = newPaths
 
-			// Add to excludes so future default additions don't re-include this path
-			claudeDir := config.ClaudeDir()
-			excludePattern := target
-			if fi, err := os.Stat(filepath.Join(claudeDir, target)); err == nil && fi.IsDir() {
-				excludePattern = target + "/*"
+			// Only add to exclude if it's a default path (to survive reset)
+			defaultSet := make(map[string]struct{}, len(config.SyncPaths))
+			for _, p := range config.SyncPaths {
+				defaultSet[p] = struct{}{}
 			}
-			alreadyExcluded := false
-			for _, e := range cfg.Exclude {
-				if e == excludePattern {
-					alreadyExcluded = true
-					break
+
+			var addedExclude string
+			if _, isDefault := defaultSet[target]; isDefault {
+				claudeDir := config.ClaudeDir()
+				excludePattern := target
+				if fi, err := os.Stat(filepath.Join(claudeDir, target)); err == nil && fi.IsDir() {
+					excludePattern = target + "/*"
 				}
-			}
-			if !alreadyExcluded {
-				cfg.Exclude = append(cfg.Exclude, excludePattern)
+				alreadyExcluded := false
+				for _, e := range cfg.Exclude {
+					if e == excludePattern {
+						alreadyExcluded = true
+						break
+					}
+				}
+				if !alreadyExcluded {
+					cfg.Exclude = append(cfg.Exclude, excludePattern)
+					addedExclude = excludePattern
+				}
 			}
 
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s Removed %s from sync paths\n", colorGreen, colorReset, target)
-			if !alreadyExcluded {
-				fmt.Printf("%s✓%s Added %s to exclude patterns\n", colorGreen, colorReset, excludePattern)
+			fmt.Printf("%s✓%s Removed %s from sync\n", colorGreen, colorReset, target)
+			if addedExclude != "" {
+				fmt.Printf("%s✓%s Added exclude filter %s (survives reset)\n", colorGreen, colorReset, addedExclude)
 			}
 			return nil
 		},
@@ -3030,7 +3152,12 @@ func pathsRemoveCmd() *cobra.Command {
 func pathsEditCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit",
-		Short: "Interactively edit sync paths",
+		Short: "Interactive multi-select editor for sync paths",
+		Long: `Open an interactive list of all current sync paths.
+
+Space toggles a path; Enter saves. To permanently remove a default
+path (so it stays off after reset), use 'paths remove' instead.`,
+		Example: "  claude-sync paths edit",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -3041,7 +3168,7 @@ func pathsEditCmd() *cobra.Command {
 
 			var selected []string
 			prompt := &survey.MultiSelect{
-				Message: "Sync edilecek path'leri seç (space ile seç/kaldır):",
+				Message: "Select paths to sync (space to toggle, enter to save):",
 				Options: effective,
 				Default: effective,
 			}
@@ -3053,7 +3180,7 @@ func pathsEditCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s Sync paths güncellendi (%d path)\n", colorGreen, colorReset, len(selected))
+			fmt.Printf("%s✓%s Sync paths updated (%d paths)\n", colorGreen, colorReset, len(selected))
 			return nil
 		},
 	}
@@ -3063,7 +3190,18 @@ func pathsResetCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "reset",
-		Short: "Reset sync paths to defaults",
+		Short: "Restore factory defaults, clear custom paths and filters",
+		Long: `Clear all custom sync paths, removed-default markers, and sub-path
+filters, restoring the built-in default set.
+
+Default sync paths:
+  CLAUDE.md, settings.json, settings.local.json, agents, commands,
+  skills, plugins, projects, plans, tasks, history.jsonl, rules,
+  workflows
+
+Use --force (-f) to skip the confirmation prompt.`,
+		Example: `  claude-sync paths reset
+  claude-sync paths reset --force`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -3073,11 +3211,11 @@ func pathsResetCmd() *cobra.Command {
 			if !force {
 				var confirm bool
 				prompt := &survey.Confirm{
-					Message: "sync_paths ve exclude ayarları sıfırlanacak, DefaultSyncPaths devreye girecek. Devam?",
+					Message: "Reset all sync paths and filters to factory defaults?",
 					Default: false,
 				}
 				if err := survey.AskOne(prompt, &confirm); err != nil || !confirm {
-					fmt.Println("  İptal edildi.")
+					fmt.Println("  Cancelled.")
 					return nil
 				}
 			}
@@ -3087,7 +3225,7 @@ func pathsResetCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s Sync paths sıfırlandı (DefaultSyncPaths aktif)\n", colorGreen, colorReset)
+			fmt.Printf("%s✓%s Sync paths reset to defaults\n", colorGreen, colorReset)
 			return nil
 		},
 	}
@@ -3096,55 +3234,47 @@ func pathsResetCmd() *cobra.Command {
 }
 
 func pathsExcludeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "exclude",
-		Short: "Manage exclude patterns",
-	}
-	cmd.AddCommand(
-		pathsExcludeListCmd(),
-		pathsExcludeAddCmd(),
-		pathsExcludeRemoveCmd(),
-	)
-	return cmd
-}
-
-func pathsExcludeListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List exclude patterns",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			if len(cfg.Exclude) == 0 {
-				fmt.Println("  (exclude pattern yok)")
-				return nil
-			}
-			fmt.Printf("\n%sExclude Patterns%s:\n", colorBold, colorReset)
-			for _, p := range cfg.Exclude {
-				fmt.Printf("  %s-%s %s\n", colorYellow, colorReset, p)
-			}
-			fmt.Println()
-			return nil
-		},
-	}
-}
+		Use:   "exclude <glob>",
+		Short: "Add a sub-path glob filter inside a synced directory",
+		Long: `Add a glob pattern that blocks specific files or subdirectories
+inside an already-synced path.
 
-func pathsExcludeAddCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "add <pattern>",
-		Short: "Add an exclude pattern",
-		Args:  cobra.ExactArgs(1),
+Use this for filtering within a sync path — NOT for removing a top-level
+sync path. To stop syncing a whole path use 'paths remove'.
+
+Glob syntax:
+  dir/*              direct children of a directory
+  dir/**             all files recursively under a directory
+  **/*.ext           any matching file anywhere under a sync path
+  path/to/file.txt   exact relative file path inside a synced dir
+
+To remove a filter, use: paths unexclude <glob>`,
+		Example: `  # Skip node_modules inside plugins/
+  claude-sync paths exclude "plugins/**/node_modules/**"
+
+  # Skip .secret files in one project
+  claude-sync paths exclude "projects/my-app/**.secret"`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
 			pattern := args[0]
+
+			// Guard: if pattern exactly matches an active sync path, guide to 'remove'
+			for _, p := range cfg.GetEffectiveSyncPaths() {
+				if p == pattern {
+					fmt.Printf("%s!%s %q is a top-level sync path — use 'paths remove %s' instead\n",
+						colorYellow, colorReset, pattern, pattern)
+					return nil
+				}
+			}
+
 			for _, p := range cfg.Exclude {
 				if p == pattern {
-					fmt.Printf("%s! %s%s zaten exclude listesinde\n", colorYellow, pattern, colorReset)
+					fmt.Printf("%s!%s %s is already in the filter list\n", colorYellow, colorReset, pattern)
 					return nil
 				}
 			}
@@ -3152,17 +3282,23 @@ func pathsExcludeAddCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s Exclude pattern eklendi: %s\n", colorGreen, colorReset, pattern)
+			fmt.Printf("%s✓%s Added sub-path filter: %s\n", colorGreen, colorReset, pattern)
 			return nil
 		},
 	}
 }
 
-func pathsExcludeRemoveCmd() *cobra.Command {
+func pathsUnexcludeCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "remove <pattern>",
-		Short: "Remove an exclude pattern",
-		Args:  cobra.ExactArgs(1),
+		Use:   "unexclude <glob>",
+		Short: "Remove a sub-path glob filter",
+		Long: `Remove a glob pattern from the sub-path filter list.
+
+If the pattern was added automatically by 'paths remove' (to mark a
+removed default), use 'paths add <path>' instead — it handles both
+re-adding the path to sync and removing the filter in one step.`,
+		Example: `  claude-sync paths unexclude "plugins/**/node_modules/**"`,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -3179,14 +3315,14 @@ func pathsExcludeRemoveCmd() *cobra.Command {
 				newExclude = append(newExclude, p)
 			}
 			if !found {
-				fmt.Printf("%s! %s%s exclude listesinde bulunamadı\n", colorYellow, pattern, colorReset)
+				fmt.Printf("%s!%s %s not found in filter list\n", colorYellow, colorReset, pattern)
 				return nil
 			}
 			cfg.Exclude = newExclude
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%s✓%s Exclude pattern kaldırıldı: %s\n", colorGreen, colorReset, pattern)
+			fmt.Printf("%s✓%s Removed filter: %s\n", colorGreen, colorReset, pattern)
 			return nil
 		},
 	}
