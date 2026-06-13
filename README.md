@@ -244,6 +244,8 @@ claude-sync reset       # Reset configuration (forgot passphrase)
 claude-sync migrate     # Convert legacy remote keys to portable path-mapped keys
 claude-sync update      # Update to latest version (verifies release checksums)
 claude-sync changelog   # Show release history
+claude-sync mcp         # Manage MCP server sync (status, enable, disable, push, pull)
+claude-sync paths       # Manage sync paths and sub-path filters
 claude-sync --help      # Show all commands
 ```
 
@@ -298,18 +300,61 @@ When enabled, hooks will:
 - **SessionStart**: Pull latest changes from remote
 - **Stop**: Push local changes to remote
 
-## Exclude Patterns
+## MCP Server Sync
 
-Skip specific files or directories during sync by adding exclude patterns to your config (`~/.claude-sync/config.yaml`):
+Sync your global MCP server configurations from `~/.claude.json` across devices.
 
-```yaml
-exclude:
-  - "*.tmp"
-  - "projects/*/node_modules/*"
-  - "projects/*/.git/*"
+```bash
+claude-sync mcp status          # Show auto-sync state, server count, pending changes
+claude-sync mcp enable          # Enable auto-sync + push current state now
+claude-sync mcp disable         # Disable auto-sync (use --include-mcp for one-off)
+claude-sync mcp push            # Push MCP configs manually
+claude-sync mcp pull            # Pull MCP configs manually
+claude-sync mcp list            # List locally configured MCP servers
 ```
 
-Patterns use glob syntax and are matched against paths relative to `~/.claude`.
+When auto-sync is enabled (`mcp enable`), every `push` and `pull` automatically includes MCP configs. MCP uses a three-way merge — conflicting server entries always keep the local version.
+
+```bash
+# One-off sync without changing settings
+claude-sync push --include-mcp
+claude-sync pull --include-mcp
+```
+
+## Sync Paths Management
+
+Control exactly which paths under `~/.claude/` are synced:
+
+```bash
+claude-sync paths                        # Show sync list and exclude filters
+claude-sync paths add my-notes           # Add a custom directory
+claude-sync paths remove history.jsonl   # Remove a path (default paths stay off after reset)
+claude-sync paths exclude "plugins/**/node_modules/**"   # Skip files inside a synced dir
+claude-sync paths unexclude "plugins/**/node_modules/**" # Remove a filter
+claude-sync paths edit                   # Interactive multi-select
+claude-sync paths reset                  # Restore factory defaults
+```
+
+**How it works:** `effective sync = sync_list − exclude_list`. Removing a default path (like `history.jsonl`) adds it to the exclude list so it stays off even after `paths reset`. Use `paths add` to re-enable it.
+
+`paths exclude` is for filtering **within** a synced directory (e.g. skip `node_modules`), not for removing top-level paths — use `paths remove` for that.
+
+## Exclude Patterns
+
+Sub-path filters skip specific files or directories inside an already-synced path:
+
+```bash
+# Skip node_modules inside plugins/
+claude-sync paths exclude "plugins/**/node_modules/**"
+
+# Skip .secret files in one project
+claude-sync paths exclude "projects/my-app/**.secret"
+
+# Remove a filter
+claude-sync paths unexclude "plugins/**/node_modules/**"
+```
+
+Patterns use glob syntax and are matched against paths relative to `~/.claude`. Supported forms: `dir/*` (direct children), `dir/**` (recursive), `**/*.ext` (any matching file).
 
 ## Shell Integration
 
