@@ -2661,12 +2661,14 @@ func mcpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Manage MCP server sync",
-		Long:  `Sync global MCP server configurations from ~/.claude.json across devices.`,
+		Long: `Sync global MCP server configurations from ~/.claude.json across devices.`,
 	}
 	cmd.AddCommand(
 		mcpListCmd(),
 		mcpPushCmd(),
 		mcpPullCmd(),
+		mcpEnableCmd(),
+		mcpDisableCmd(),
 	)
 	return cmd
 }
@@ -2757,6 +2759,44 @@ func mcpPullCmd() *cobra.Command {
 	}
 }
 
+func mcpEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable",
+		Short: "Enable automatic MCP sync on every push/pull",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			cfg.MCPSync = true
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s MCP sync enabled. MCP servers will be synced automatically on every push/pull.\n", colorGreen, colorReset)
+			return nil
+		},
+	}
+}
+
+func mcpDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Disable automatic MCP sync on every push/pull",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			cfg.MCPSync = false
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s MCP sync disabled. Use --include-mcp flag for one-time sync.\n", colorGreen, colorReset)
+			return nil
+		},
+	}
+}
+
 func runMCPPush(ctx context.Context, syncer *sync.Syncer) error {
 	result, err := syncer.PushMCP(ctx)
 	if err != nil {
@@ -2778,10 +2818,7 @@ func pathsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "paths",
 		Short: "Manage sync paths",
-		Long:  "List, add, remove, or reset the paths synced under ~/.claude.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPathsList()
-		},
+		Long:  "Manage which paths under ~/.claude/ are synced to cloud storage.\n\nUse subcommands to list, add, remove, edit, or reset sync paths,\nand to configure exclude patterns that skip certain files or directories.",
 	}
 	cmd.AddCommand(
 		pathsListCmd(),
