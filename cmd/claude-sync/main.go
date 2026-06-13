@@ -2859,10 +2859,26 @@ func pathsAddCmd() *cobra.Command {
 			}
 
 			cfg.SyncPaths = append(effective, newPath)
+
+			// Remove any exclude patterns that would block this path
+			filtered := cfg.Exclude[:0:0]
+			removed := 0
+			for _, e := range cfg.Exclude {
+				if e == newPath || e == newPath+"/*" || e == newPath+"/**" {
+					removed++
+					continue
+				}
+				filtered = append(filtered, e)
+			}
+			cfg.Exclude = filtered
+
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
 			fmt.Printf("%s✓%s Added %s to sync paths\n", colorGreen, colorReset, newPath)
+			if removed > 0 {
+				fmt.Printf("%s✓%s Removed %d conflicting exclude pattern(s) for %s\n", colorGreen, colorReset, removed, newPath)
+			}
 			return nil
 		},
 	}
@@ -2914,10 +2930,31 @@ func pathsRemoveCmd() *cobra.Command {
 				}
 			}
 			cfg.SyncPaths = newPaths
+
+			// Add to excludes so future default additions don't re-include this path
+			claudeDir := config.ClaudeDir()
+			excludePattern := target
+			if fi, err := os.Stat(filepath.Join(claudeDir, target)); err == nil && fi.IsDir() {
+				excludePattern = target + "/*"
+			}
+			alreadyExcluded := false
+			for _, e := range cfg.Exclude {
+				if e == excludePattern {
+					alreadyExcluded = true
+					break
+				}
+			}
+			if !alreadyExcluded {
+				cfg.Exclude = append(cfg.Exclude, excludePattern)
+			}
+
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
 			fmt.Printf("%s✓%s Removed %s from sync paths\n", colorGreen, colorReset, target)
+			if !alreadyExcluded {
+				fmt.Printf("%s✓%s Added %s to exclude patterns\n", colorGreen, colorReset, excludePattern)
+			}
 			return nil
 		},
 	}
