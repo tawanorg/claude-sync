@@ -2810,7 +2810,35 @@ func runPathsList() error {
 		return err
 	}
 
-	paths := cfg.GetEffectiveSyncPaths()
+	// Build a set of excluded base paths (strip /* and /**)
+	excludedBases := make(map[string]struct{}, len(cfg.Exclude))
+	for _, e := range cfg.Exclude {
+		base := strings.TrimSuffix(strings.TrimSuffix(e, "/**"), "/*")
+		excludedBases[base] = struct{}{}
+		excludedBases[e] = struct{}{} // also exact match (e.g. "history.jsonl")
+	}
+
+	// Remove sync paths that are covered by an exclude
+	allPaths := cfg.GetEffectiveSyncPaths()
+	var activePaths []string
+	var removedFromSync []string
+	for _, p := range allPaths {
+		if _, excluded := excludedBases[p]; excluded {
+			removedFromSync = append(removedFromSync, p)
+			continue
+		}
+		activePaths = append(activePaths, p)
+	}
+
+	if len(removedFromSync) > 0 {
+		cfg.SyncPaths = activePaths
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("%s✓%s Removed from sync paths (covered by exclude): %s\n", colorGreen, colorReset, strings.Join(removedFromSync, ", "))
+	}
+
+	paths := activePaths
 	source := "default"
 	if len(cfg.SyncPaths) > 0 {
 		source = "config.yaml"
