@@ -32,11 +32,12 @@ Version is injected at build time: `-ldflags "-X main.version=<version>"`. `make
 
 Layered, with a pluggable storage abstraction:
 
-- **CLI layer** — `cmd/claude-sync/main.go`. Cobra commands (`init`, `push`, `pull`, `status`, `diff`, `conflicts`, `reset`, `update`, `changelog`, `mcp`) plus Survey-driven interactive wizards. All user-facing output lives here.
+- **CLI layer** — `cmd/claude-sync/main.go`. Cobra commands (`init`, `push`, `pull`, `status`, `diff`, `conflicts`, `reset`, `update`, `changelog`, `mcp`, `paths`) plus Survey-driven interactive wizards. All user-facing output lives here.
 - **Sync layer** — `internal/sync/`. `Syncer` orchestrates push/pull; `SyncState` (`state.json`) tracks per-file SHA256 hash + size + mtime + last-uploaded time. `DetectChanges` compares local files against state to produce `add/modify/delete` work items. Push/pull both run uploads/downloads with a worker pool (`defaultWorkers = 10`).
 - **Crypto layer** — `internal/crypto/encrypt.go`. Wraps `filippo.io/age` (X25519 + ChaCha20-Poly1305). Supports two key modes: random (`GenerateKey`) or passphrase-derived (`GenerateKeyFromPassphrase`, Argon2id with a **fixed salt** `sha256("claude-sync-v1")` so the same passphrase yields the same key on any device). The derived 32 bytes are clamped for X25519 then Bech32-encoded as an `AGE-SECRET-KEY-…` identity.
 - **Storage layer** — `internal/storage/`. `Storage` interface (`Upload`/`Download`/`Delete`/`DeleteBatch`/`List`/`Head`/`BucketExists`) with three adapters: `r2/` (AWS SDK v2 pointed at `<account>.r2.cloudflarestorage.com`), `s3/` (AWS SDK v2), `gcs/` (Google Cloud Storage SDK). Adapters **self-register** via `init()` functions setting package-level `storage.NewR2` / `NewS3` / `NewGCS` vars; `cmd/claude-sync/main.go` blank-imports them to wire up the factory (`storage.New`). Add new providers by following this pattern.
-- **Config layer** — `internal/config/config.go`. YAML at `~/.claude-sync/config.yaml` (perms 0600). Supports both new unified `storage:` block and legacy R2-only top-level fields — `GetStorageConfig()` handles migration. `SyncPaths` defines what gets synced under `~/.claude/`; edit there to change the sync scope.
+- **Config layer** — `internal/config/config.go`. YAML at `~/.claude-sync/config.yaml` (perms 0600). Supports both new unified `storage:` block and legacy R2-only top-level fields — `GetStorageConfig()` handles migration. `SyncPaths` and `Exclude` define what gets synced; manage via `paths` subcommands (see below).
+- **Paths management** — `paths` subcommands in `main.go`. `Effective sync = sync_list − exclude_list`. `paths remove` is smart: default paths get an exclude entry (survives `paths reset`), custom paths are just deleted. `paths exclude <glob>` / `paths unexclude <glob>` manage sub-path glob filters. `paths add` removes conflicting exclude entries when re-enabling a removed default.
 
 ### On-disk layout
 
