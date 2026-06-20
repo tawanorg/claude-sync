@@ -49,8 +49,10 @@ type Config struct {
 	// or "sessions" (portable conversation data only). See ScopedSyncPaths.
 	Scope string `yaml:"scope,omitempty"`
 
-	// MCPSync enables syncing MCP server configs from ~/.claude.json
-	MCPSync bool `yaml:"mcp_sync,omitempty"`
+	// MCPSync enables syncing MCP server configs from ~/.claude.json.
+	// Pointer so nil (field absent) reads as disabled without writing "false"
+	// to existing configs; disable explicitly writes false so the state is visible.
+	MCPSync *bool `yaml:"mcp_sync,omitempty"`
 
 	// PathMap maps local directory prefixes to shared token names so project
 	// sessions stay resumable across devices with different layouts.

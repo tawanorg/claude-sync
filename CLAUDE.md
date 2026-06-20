@@ -60,7 +60,15 @@ Layered, with a pluggable storage abstraction:
 
 ### MCP sync
 
-`~/.claude.json` holds global MCP server configs. Unlike regular sync, MCP uses a **three-way merge** (`internal/sync/mcp.go`) against a baseline stored in `SyncState.MCPBaseline`. On pull, local vs remote vs baseline are merged; conflicting server entries keep local. Paths inside MCP server commands/args are home-relative-normalized (`NormalizeMCPServers`) before upload and resolved back to absolute on pull. Remote key is fixed: `_external/mcp-servers.json.age`. Toggle via `mcp_sync: true` in config or the `--include-mcp` flag.
+`~/.claude.json` holds global MCP server configs. Unlike regular sync, MCP uses a **three-way merge** (`internal/sync/mcp.go`) against a baseline stored in `SyncState.MCPBaseline`. On pull, local vs remote vs baseline are merged; conflicting server entries keep local. Paths inside MCP server commands/args are home-relative-normalized (`NormalizeMCPServers`) before upload and resolved back to absolute on pull. Remote key is fixed: `_external/mcp-servers.json.age`.
+
+**Toggle options:**
+- `mcp enable` — writes `mcp_sync: true` to config **and immediately pushes current MCP state**. Subsequent `push`/`pull` auto-include MCP.
+- `mcp disable` — writes `mcp_sync: false` explicitly (visible in config). Use `--include-mcp` flag for one-off syncs.
+- `--include-mcp` flag on `push`/`pull` — one-time inclusion without changing the config.
+- `mcp status` — shows auto-sync state, local server count, and whether there are unpushed changes.
+
+**`MCPSync` field type:** `*bool` with `omitempty`. `nil` (field absent) = disabled (backward compat with old configs), `&true` = auto-sync enabled, `&false` = explicitly disabled and visible in config.
 
 ## Distribution & release
 

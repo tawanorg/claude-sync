@@ -1085,7 +1085,7 @@ func pushCmd() *cobra.Command {
 			}
 
 			// MCP sync if enabled
-			if includeMCP || cfg.MCPSync {
+			if includeMCP || (cfg.MCPSync != nil && *cfg.MCPSync) {
 				if err := runMCPPush(ctx, syncer); err != nil {
 					return err
 				}
@@ -1223,7 +1223,7 @@ Examples:
 			}
 
 			// MCP sync if enabled
-			if includeMCP || cfg.MCPSync {
+			if includeMCP || (cfg.MCPSync != nil && *cfg.MCPSync) {
 				if err := runMCPPull(ctx, syncer); err != nil {
 					return err
 				}
@@ -2663,11 +2663,63 @@ func mcpCmd() *cobra.Command {
 		Long:  `Sync global MCP server configurations from ~/.claude.json across devices.`,
 	}
 	cmd.AddCommand(
+		mcpStatusCmd(),
 		mcpListCmd(),
 		mcpPushCmd(),
 		mcpPullCmd(),
+		mcpEnableCmd(),
+		mcpDisableCmd(),
 	)
 	return cmd
+}
+
+func mcpStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show MCP sync settings and local server state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			// Auto-sync setting
+			autoSync := cfg.MCPSync != nil && *cfg.MCPSync
+			if autoSync {
+				fmt.Printf("  Auto-sync  %s✓ enabled%s  (included in every push/pull)\n", colorGreen, colorReset)
+			} else {
+				fmt.Printf("  Auto-sync  %s✗ disabled%s  (use --include-mcp or 'mcp push/pull')\n", colorDim, colorReset)
+			}
+
+			// Local server count + pending changes
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+			ctx := context.Background()
+			status, err := syncer.MCPStatus(ctx)
+			if err != nil {
+				return err
+			}
+
+			if status.ServerCount == 0 {
+				fmt.Printf("  Servers    %s0 servers%s in %s\n", colorDim, colorReset, config.ClaudeJSONPath())
+			} else {
+				fmt.Printf("  Servers    %d configured\n", status.ServerCount)
+			}
+
+			if status.HasChanges {
+				fmt.Printf("  Changes    %s● unpushed local changes%s\n", colorYellow, colorReset)
+			} else {
+				fmt.Printf("  Changes    %s✓ in sync%s\n", colorGreen, colorReset)
+			}
+
+			fmt.Printf("\n  %smcp enable%s   — auto-include in every push/pull\n", colorDim, colorReset)
+			fmt.Printf("  %smcp disable%s  — manual only\n", colorDim, colorReset)
+
+			return nil
+		},
+	}
 }
 
 func mcpListCmd() *cobra.Command {
@@ -2752,6 +2804,52 @@ func mcpPullCmd() *cobra.Command {
 
 			ctx := context.Background()
 			return runMCPPull(ctx, syncer)
+		},
+	}
+}
+
+func mcpEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable",
+		Short: "Enable automatic MCP sync on every push/pull (syncs now too)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			t := true
+			cfg.MCPSync = &t
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s MCP auto-sync enabled.\n", colorGreen, colorReset)
+
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+			ctx := context.Background()
+			return runMCPPush(ctx, syncer)
+		},
+	}
+}
+
+func mcpDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Disable automatic MCP sync on every push/pull",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			f := false
+			cfg.MCPSync = &f
+			if err := config.Save(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%s✓%s MCP sync disabled. Use --include-mcp flag for one-time sync.\n", colorGreen, colorReset)
+			return nil
 		},
 	}
 }

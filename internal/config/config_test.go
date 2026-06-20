@@ -312,12 +312,13 @@ func TestConfigSaveAndLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	mcpEnabled := true
 	cfg := &Config{
 		EncryptionKey: "~/.claude-sync/age-key.txt",
 		Bucket:        "test-bucket",
 		AccountID:     "test-account",
 		Exclude:       []string{"*.tmp", "cache/**"},
-		MCPSync:       true,
+		MCPSync:       &mcpEnabled,
 	}
 
 	// Write config manually to test Load

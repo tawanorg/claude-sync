@@ -245,6 +245,7 @@ claude-sync reset       # Reset configuration (forgot passphrase)
 claude-sync migrate     # Convert legacy remote keys to portable path-mapped keys
 claude-sync update      # Update to latest version (verifies release checksums)
 claude-sync changelog   # Show release history
+claude-sync mcp         # Manage MCP server sync (status, enable, disable, push, pull)
 claude-sync --help      # Show all commands
 ```
 
@@ -283,6 +284,27 @@ claude-sync update           # Download and install latest version
 ```bash
 claude-sync changelog            # Show recent releases
 claude-sync changelog --limit 5  # Show last 5 releases
+```
+
+## MCP Server Sync
+
+Sync your global MCP server configurations from `~/.claude.json` across devices.
+
+```bash
+claude-sync mcp status          # Show auto-sync state, server count, pending changes
+claude-sync mcp enable          # Enable auto-sync + push current state now
+claude-sync mcp disable         # Disable auto-sync (use --include-mcp for one-off)
+claude-sync mcp push            # Push MCP configs manually
+claude-sync mcp pull            # Pull MCP configs manually
+claude-sync mcp list            # List locally configured MCP servers
+```
+
+When auto-sync is enabled (`mcp enable`), every `push` and `pull` automatically includes MCP configs. MCP uses a three-way merge — conflicting server entries always keep the local version.
+
+```bash
+# One-off sync without changing settings
+claude-sync push --include-mcp
+claude-sync pull --include-mcp
 ```
 
 ## Exclude Patterns
