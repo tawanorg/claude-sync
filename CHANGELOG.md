@@ -1,3 +1,10 @@
+## [1.14.1](https://github.com/tawanorg/claude-sync/compare/v1.14.0...v1.14.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* update GitHub Actions to v6 for Node 24 compatibility ([#49](https://github.com/tawanorg/claude-sync/issues/49)) ([f071a0e](https://github.com/tawanorg/claude-sync/commit/f071a0eeb0b52d89c02466a745b9c580d3ad9f40))
+
 # [1.14.0](https://github.com/tawanorg/claude-sync/compare/v1.13.0...v1.14.0) (2026-06-22)
 
 
