@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/tawanorg/claude-sync/compare/v1.12.0...v1.13.0) (2026-06-22)
+
+
+### Features
+
+* implement claude-sync auto enable/disable/status with TDD ([#47](https://github.com/tawanorg/claude-sync/issues/47)) ([0a9f77f](https://github.com/tawanorg/claude-sync/commit/0a9f77f701bfbdfd50a00b05aab17eac6bd996a1))
+
 # [1.12.0](https://github.com/tawanorg/claude-sync/compare/v1.11.1...v1.12.0) (2026-06-19)
 
 
