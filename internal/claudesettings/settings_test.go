@@ -783,7 +783,7 @@ func TestIntegrationRoundTrip(t *testing.T) {
 	// Verify other fields preserved by reading raw JSON
 	data, _ := os.ReadFile(path)
 	var raw map[string]any
-	json.Unmarshal(data, &raw)
+	_ = json.Unmarshal(data, &raw)
 	if raw["enabledPlugins"] == nil {
 		t.Error("enabledPlugins not preserved")
 	}
