@@ -49,8 +49,15 @@ type Config struct {
 	// or "sessions" (portable conversation data only). See ScopedSyncPaths.
 	Scope string `yaml:"scope,omitempty"`
 
-	// MCPSync enables syncing MCP server configs from ~/.claude.json
-	MCPSync bool `yaml:"mcp_sync,omitempty"`
+	// SyncPaths overrides the scope-based default paths when non-empty.
+	// Use GetEffectiveSyncPaths() to get the actual paths to sync.
+	SyncPaths []string `yaml:"sync_paths,omitempty"`
+
+	// MCPSync enables syncing MCP server configs from ~/.claude.json.
+	// Pointer type allows distinguishing between unset (nil), enabled (true),
+	// and explicitly disabled (false). Nil is treated as disabled for backward
+	// compatibility with existing configs.
+	MCPSync *bool `yaml:"mcp_sync,omitempty"`
 
 	// PathMap maps local directory prefixes to shared token names so project
 	// sessions stay resumable across devices with different layouts.
@@ -235,6 +242,26 @@ func (c *Config) GetStorageConfig() *storage.StorageConfig {
 // IsLegacyConfig returns true if using the legacy R2-only config format
 func (c *Config) IsLegacyConfig() bool {
 	return c.Storage == nil && c.AccountID != ""
+}
+
+// GetEffectiveSyncPaths returns the paths to sync: custom SyncPaths if set,
+// otherwise the scope-based defaults.
+func (c *Config) GetEffectiveSyncPaths() []string {
+	if len(c.SyncPaths) > 0 {
+		return c.SyncPaths
+	}
+	return ScopedSyncPaths(c.Scope)
+}
+
+// IsMCPSyncEnabled returns true if MCP sync is explicitly enabled.
+// Returns false if MCPSync is nil (unset) or false.
+func (c *Config) IsMCPSyncEnabled() bool {
+	return c.MCPSync != nil && *c.MCPSync
+}
+
+// SetMCPSync sets the MCP sync state. Pass true to enable, false to explicitly disable.
+func (c *Config) SetMCPSync(enabled bool) {
+	c.MCPSync = &enabled
 }
 
 // IsExcluded returns true if the given relative path matches any exclude pattern.

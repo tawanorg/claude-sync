@@ -29,6 +29,7 @@ jobs:
             ./internal/claudesettings/ \
             ./internal/config/ \
             ./internal/crypto/ \
+            ./internal/paths/ \
             ./internal/storage/ \
             ./internal/sync/ \
             ./internal/util/

@@ -312,12 +312,13 @@ func TestConfigSaveAndLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	mcpEnabled := true
 	cfg := &Config{
 		EncryptionKey: "~/.claude-sync/age-key.txt",
 		Bucket:        "test-bucket",
 		AccountID:     "test-account",
 		Exclude:       []string{"*.tmp", "cache/**"},
-		MCPSync:       true,
+		MCPSync:       &mcpEnabled,
 	}
 
 	// Write config manually to test Load
@@ -416,4 +417,106 @@ func TestIsExcluded(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetEffectiveSyncPaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		syncPaths []string
+		scope     string
+		wantLen   int
+	}{
+		{
+			name:      "empty SyncPaths returns defaults",
+			syncPaths: nil,
+			scope:     "",
+			wantLen:   len(SyncPaths),
+		},
+		{
+			name:      "custom SyncPaths overrides defaults",
+			syncPaths: []string{"CLAUDE.md", "settings.json"},
+			scope:     "",
+			wantLen:   2,
+		},
+		{
+			name:      "sessions scope without custom paths",
+			syncPaths: nil,
+			scope:     ScopeSessions,
+			wantLen:   len(SessionSyncPaths),
+		},
+		{
+			name:      "custom SyncPaths overrides sessions scope",
+			syncPaths: []string{"custom-only"},
+			scope:     ScopeSessions,
+			wantLen:   1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{SyncPaths: tt.syncPaths, Scope: tt.scope}
+			got := cfg.GetEffectiveSyncPaths()
+			if len(got) != tt.wantLen {
+				t.Errorf("GetEffectiveSyncPaths() returned %d paths, want %d", len(got), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestIsMCPSyncEnabled(t *testing.T) {
+	tests := []struct {
+		name    string
+		mcpSync *bool
+		want    bool
+	}{
+		{
+			name:    "nil (unset) returns false",
+			mcpSync: nil,
+			want:    false,
+		},
+		{
+			name:    "true returns true",
+			mcpSync: boolPtr(true),
+			want:    true,
+		},
+		{
+			name:    "false returns false",
+			mcpSync: boolPtr(false),
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{MCPSync: tt.mcpSync}
+			if got := cfg.IsMCPSyncEnabled(); got != tt.want {
+				t.Errorf("IsMCPSyncEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetMCPSync(t *testing.T) {
+	cfg := &Config{}
+
+	// Initially nil
+	if cfg.MCPSync != nil {
+		t.Error("MCPSync should be nil initially")
+	}
+
+	// Enable
+	cfg.SetMCPSync(true)
+	if cfg.MCPSync == nil || !*cfg.MCPSync {
+		t.Error("SetMCPSync(true) should set MCPSync to true")
+	}
+
+	// Disable
+	cfg.SetMCPSync(false)
+	if cfg.MCPSync == nil || *cfg.MCPSync {
+		t.Error("SetMCPSync(false) should set MCPSync to false")
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }
