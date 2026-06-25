@@ -63,7 +63,16 @@ func loadStateFromPath(statePath string) (*SyncState, error) {
 
 	var state SyncState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to parse state: %w", err)
+		// state.json is a regenerable sync cache (hashes, timestamps), not user
+		// config. A corrupt cache must never brick push/pull: back it up and start
+		// fresh so the next sync simply re-scans, without touching real config.
+		backup := fmt.Sprintf("%s.corrupt-%d", statePath, time.Now().Unix())
+		if renameErr := os.Rename(statePath, backup); renameErr == nil {
+			fmt.Fprintf(os.Stderr, "Warning: state file was corrupt (%v); backed up to %s and starting fresh\n", err, backup)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: state file was corrupt (%v); starting fresh\n", err)
+		}
+		return NewState(), nil
 	}
 
 	if state.Files == nil {
@@ -98,7 +107,28 @@ func (s *SyncState) Save() error {
 		return fmt.Errorf("failed to serialize state: %w", err)
 	}
 
-	if err := os.WriteFile(statePath, data, 0600); err != nil {
+	// Write atomically: write to a temp file in the same directory, then rename.
+	// A crash or concurrent run mid-write can never leave a half-written/corrupt
+	// state.json this way (rename is atomic on the same filesystem).
+	tmp, err := os.CreateTemp(dir, ".state-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp state file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) // no-op if rename succeeded
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to write state: %w", err)
+	}
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to set state permissions: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to flush state: %w", err)
+	}
+	if err := os.Rename(tmpPath, statePath); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
 

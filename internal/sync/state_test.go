@@ -544,6 +544,43 @@ func TestStateSaveAndLoad(t *testing.T) {
 	}
 }
 
+// TestLoadCorruptStateRecovers reproduces issue #50: a corrupt state.json
+// (e.g. trailing '}' from a half-written or concurrent write) must not brick
+// push/pull. Loading should self-heal by backing up the corrupt file and
+// returning a fresh state, since state.json is a regenerable cache.
+func TestLoadCorruptStateRecovers(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+
+	// Valid JSON followed by a stray '}' -> "invalid character '}' after top-level value"
+	if err := os.WriteFile(statePath, []byte(`{"files":{},"device_id":"x"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadStateFromDir(tmpDir)
+	if err != nil {
+		t.Fatalf("expected recovery from corrupt state, got error: %v", err)
+	}
+	if loaded == nil || loaded.Files == nil {
+		t.Fatal("expected a usable fresh state after recovery")
+	}
+
+	// The corrupt file should have been moved aside, not deleted, so the user
+	// can recover it if needed.
+	matches, _ := filepath.Glob(statePath + ".corrupt-*")
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly one backup of the corrupt state, found %d", len(matches))
+	}
+
+	// A subsequent Save must produce parseable state.
+	if err := loaded.Save(); err != nil {
+		t.Fatalf("Save after recovery failed: %v", err)
+	}
+	if _, err := LoadStateFromDir(tmpDir); err != nil {
+		t.Fatalf("reload after recovery failed: %v", err)
+	}
+}
+
 func TestGetLocalFilesSkipsSymlinksInDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 
