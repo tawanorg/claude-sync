@@ -145,17 +145,8 @@ func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
 	return nil
 }
 
-// List returns all objects under the given prefix using PROPFIND.
-func (c *Client) List(ctx context.Context, prefix string) ([]storage.ObjectInfo, error) {
-	url := c.collectionURL()
-	if prefix != "" {
-		url = c.collectionURL() + prefix
-		if !strings.HasSuffix(url, "/") {
-			url += "/"
-		}
-	}
-
-	propfindBody := `<?xml version="1.0" encoding="UTF-8"?>
+// propfindListBody is the PROPFIND request body used to enumerate objects.
+const propfindListBody = `<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:">
   <d:prop>
     <d:getcontentlength/>
@@ -165,52 +156,144 @@ func (c *Client) List(ctx context.Context, prefix string) ([]storage.ObjectInfo,
   </d:prop>
 </d:propfind>`
 
-	resp, err := c.doRequest(ctx, "PROPFIND", url, strings.NewReader(propfindBody), map[string]string{
-		"Content-Type": "application/xml",
-		"Depth":        "infinity",
-	})
+// List returns all objects under the given prefix using PROPFIND.
+//
+// It first attempts a single Depth: infinity request, which Nextcloud and
+// ownCloud support. Many other servers — notably Synology's WebDAV Server and
+// Apache mod_dav with its default DavDepthInfinity off — reject infinite-depth
+// PROPFIND with 403/405/501. In that case we fall back to walking the tree with
+// Depth: 1 requests, which every WebDAV server supports.
+func (c *Client) List(ctx context.Context, prefix string) ([]storage.ObjectInfo, error) {
+	startURL := c.collectionURL()
+	if prefix != "" {
+		startURL = c.collectionURL() + prefix
+		if !strings.HasSuffix(startURL, "/") {
+			startURL += "/"
+		}
+	}
+
+	responses, status, err := c.propfind(ctx, startURL, "infinity")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list objects: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
+	switch {
+	case status == http.StatusNotFound:
 		return nil, nil
+	case status == 207:
+		return c.collectObjects(responses), nil
+	case infinityUnsupported(status):
+		// Server refuses Depth: infinity — walk the tree one level at a time.
+		return c.listRecursive(ctx, startURL)
+	default:
+		return nil, fmt.Errorf("failed to list objects: HTTP %d", status)
+	}
+}
+
+// infinityUnsupported reports whether a status code indicates the server
+// rejected a Depth: infinity PROPFIND (as opposed to a genuine error).
+func infinityUnsupported(status int) bool {
+	switch status {
+	case http.StatusForbidden, http.StatusMethodNotAllowed, http.StatusNotImplemented, http.StatusBadRequest:
+		return true
+	default:
+		return false
+	}
+}
+
+// listRecursive walks the collection tree using Depth: 1 PROPFIND requests,
+// for servers that reject Depth: infinity. Directories are visited breadth-first.
+func (c *Client) listRecursive(ctx context.Context, startURL string) ([]storage.ObjectInfo, error) {
+	var objects []storage.ObjectInfo
+	queue := []string{startURL}
+	visited := map[string]bool{}
+
+	for len(queue) > 0 {
+		dirURL := queue[0]
+		queue = queue[1:]
+		if visited[dirURL] {
+			continue
+		}
+		visited[dirURL] = true
+
+		responses, status, err := c.propfind(ctx, dirURL, "1")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list objects: %w", err)
+		}
+		if status == http.StatusNotFound {
+			continue
+		}
+		if status != 207 {
+			return nil, fmt.Errorf("failed to list objects: HTTP %d", status)
+		}
+
+		for _, r := range responses {
+			key := c.hrefToKey(r.Href)
+			if key == "" {
+				continue // the collection referencing itself
+			}
+			if r.IsCollection {
+				childURL := c.collectionURL() + key
+				if !strings.HasSuffix(childURL, "/") {
+					childURL += "/"
+				}
+				queue = append(queue, childURL)
+				continue
+			}
+			objects = append(objects, storage.ObjectInfo{
+				Key:          key,
+				Size:         r.ContentLength,
+				LastModified: r.LastModified,
+				ETag:         r.ETag,
+			})
+		}
 	}
 
+	return objects, nil
+}
+
+// propfind issues a PROPFIND at the given depth and returns the parsed entries
+// together with the HTTP status code. A non-207 status yields (nil, status, nil)
+// so callers can decide how to react without treating it as a transport error.
+func (c *Client) propfind(ctx context.Context, url, depth string) ([]parsedResponse, int, error) {
+	resp, err := c.doRequest(ctx, "PROPFIND", url, strings.NewReader(propfindListBody), map[string]string{
+		"Content-Type": "application/xml",
+		"Depth":        depth,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != 207 {
-		return nil, fmt.Errorf("failed to list objects: HTTP %d", resp.StatusCode)
+		return nil, resp.StatusCode, nil
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read PROPFIND response: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("failed to read PROPFIND response: %w", err)
 	}
 
 	responses, err := parsePropfindResponse(body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse PROPFIND response: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("failed to parse PROPFIND response: %w", err)
 	}
 
-	collectionBase := c.collectionURL()
+	return responses, resp.StatusCode, nil
+}
+
+// collectObjects turns PROPFIND entries into ObjectInfos, dropping collections
+// and the self-reference of the listed directory.
+func (c *Client) collectObjects(responses []parsedResponse) []storage.ObjectInfo {
 	var objects []storage.ObjectInfo
 	for _, r := range responses {
 		if r.IsCollection {
 			continue
 		}
-
-		key := r.Href
-		if idx := strings.Index(key, c.pathPrefix+"/"); idx >= 0 {
-			key = key[idx+len(c.pathPrefix)+1:]
-		} else {
-			key = strings.TrimPrefix(key, collectionBase)
-		}
-		key = strings.TrimLeft(key, "/")
-
+		key := c.hrefToKey(r.Href)
 		if key == "" {
 			continue
 		}
-
 		objects = append(objects, storage.ObjectInfo{
 			Key:          key,
 			Size:         r.ContentLength,
@@ -218,23 +301,24 @@ func (c *Client) List(ctx context.Context, prefix string) ([]storage.ObjectInfo,
 			ETag:         r.ETag,
 		})
 	}
+	return objects
+}
 
-	return objects, nil
+// hrefToKey converts a PROPFIND href into a storage key relative to the
+// configured path prefix.
+func (c *Client) hrefToKey(href string) string {
+	key := href
+	if idx := strings.Index(key, c.pathPrefix+"/"); c.pathPrefix != "" && idx >= 0 {
+		key = key[idx+len(c.pathPrefix)+1:]
+	} else {
+		key = strings.TrimPrefix(key, c.collectionURL())
+	}
+	return strings.TrimLeft(key, "/")
 }
 
 // Head returns metadata for the given key without downloading content.
 func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, error) {
-	propfindBody := `<?xml version="1.0" encoding="UTF-8"?>
-<d:propfind xmlns:d="DAV:">
-  <d:prop>
-    <d:getcontentlength/>
-    <d:getlastmodified/>
-    <d:getetag/>
-    <d:resourcetype/>
-  </d:prop>
-</d:propfind>`
-
-	resp, err := c.doRequest(ctx, "PROPFIND", c.fullURL(key), strings.NewReader(propfindBody), map[string]string{
+	resp, err := c.doRequest(ctx, "PROPFIND", c.fullURL(key), strings.NewReader(propfindListBody), map[string]string{
 		"Content-Type": "application/xml",
 		"Depth":        "0",
 	})

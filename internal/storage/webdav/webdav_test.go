@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -586,5 +587,159 @@ func TestEnsureParentDirsNoParent(t *testing.T) {
 	err := client.ensureParentDirs(context.Background(), "file.age")
 	if err != nil {
 		t.Errorf("ensureParentDirs() error = %v", err)
+	}
+}
+
+// multistatusFor builds a 207 PROPFIND body for a Depth: 1 listing of dir:
+// the self-reference plus the given child files and child collections.
+func multistatusFor(dir string, files, dirs []string) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">`)
+	// self
+	b.WriteString(`<d:response><d:href>` + dir + `</d:href><d:propstat><d:prop>` +
+		`<d:resourcetype><d:collection/></d:resourcetype></d:prop>` +
+		`<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`)
+	for _, f := range files {
+		b.WriteString(`<d:response><d:href>` + dir + f + `</d:href><d:propstat><d:prop>` +
+			`<d:resourcetype/><d:getcontentlength>10</d:getcontentlength>` +
+			`<d:getlastmodified>Mon, 14 Apr 2025 10:00:00 GMT</d:getlastmodified>` +
+			`<d:getetag>"e-` + f + `"</d:getetag></d:prop>` +
+			`<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`)
+	}
+	for _, d := range dirs {
+		b.WriteString(`<d:response><d:href>` + dir + d + `/</d:href><d:propstat><d:prop>` +
+			`<d:resourcetype><d:collection/></d:resourcetype></d:prop>` +
+			`<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`)
+	}
+	b.WriteString(`</d:multistatus>`)
+	return b.String()
+}
+
+// TestListDepthInfinityFallback verifies that when a server rejects a
+// Depth: infinity PROPFIND (as Synology WebDAV Server and Apache mod_dav do),
+// List falls back to a recursive Depth: 1 walk and still enumerates every file.
+func TestListDepthInfinityFallback(t *testing.T) {
+	const prefix = "claude-sync"
+
+	// Tree under /claude-sync/:
+	//   settings.enc
+	//   sessions/a.enc
+	//   sessions/nested/b.enc
+	tree := map[string]string{
+		"/claude-sync/":                 multistatusFor("/claude-sync/", []string{"settings.enc"}, []string{"sessions"}),
+		"/claude-sync/sessions/":        multistatusFor("/claude-sync/sessions/", []string{"a.enc"}, []string{"nested"}),
+		"/claude-sync/sessions/nested/": multistatusFor("/claude-sync/sessions/nested/", []string{"b.enc"}, nil),
+	}
+
+	var infinityAttempts, depth1Requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PROPFIND" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Header.Get("Depth") == "infinity" {
+			infinityAttempts++
+			// Mimic Synology / Apache DavDepthInfinity off.
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		depth1Requests++
+		body, ok := tree[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(207)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	c, err := New(&storage.StorageConfig{
+		WebDAVURL:      server.URL,
+		PathPrefix:     prefix,
+		WebDAVUsername: "u",
+		WebDAVPassword: "p",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	objs, err := c.List(context.Background(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if infinityAttempts != 1 {
+		t.Errorf("expected exactly 1 Depth: infinity attempt, got %d", infinityAttempts)
+	}
+	if depth1Requests != 3 {
+		t.Errorf("expected 3 Depth: 1 requests (one per collection), got %d", depth1Requests)
+	}
+
+	got := make([]string, 0, len(objs))
+	for _, o := range objs {
+		got = append(got, o.Key)
+	}
+	sort.Strings(got)
+
+	want := []string{"sessions/a.enc", "sessions/nested/b.enc", "settings.enc"}
+	if len(got) != len(want) {
+		t.Fatalf("expected keys %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected keys %v, got %v", want, got)
+		}
+	}
+}
+
+// TestListDepthInfinitySuccess verifies the fast path: a server that honors
+// Depth: infinity is listed in a single request with no fallback walk.
+func TestListDepthInfinitySuccess(t *testing.T) {
+	const prefix = "claude-sync"
+
+	full := `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">` +
+		`<d:response><d:href>/claude-sync/</d:href><d:propstat><d:prop>` +
+		`<d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>` +
+		`<d:response><d:href>/claude-sync/settings.enc</d:href><d:propstat><d:prop>` +
+		`<d:resourcetype/><d:getcontentlength>10</d:getcontentlength>` +
+		`<d:getlastmodified>Mon, 14 Apr 2025 10:00:00 GMT</d:getlastmodified><d:getetag>"x"</d:getetag></d:prop>` +
+		`<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>` +
+		`<d:response><d:href>/claude-sync/sessions/a.enc</d:href><d:propstat><d:prop>` +
+		`<d:resourcetype/><d:getcontentlength>10</d:getcontentlength>` +
+		`<d:getlastmodified>Mon, 14 Apr 2025 10:00:00 GMT</d:getlastmodified><d:getetag>"y"</d:getetag></d:prop>` +
+		`<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>` +
+		`</d:multistatus>`
+
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Depth") != "infinity" {
+			t.Errorf("expected Depth: infinity, got %q", r.Header.Get("Depth"))
+		}
+		w.WriteHeader(207)
+		_, _ = w.Write([]byte(full))
+	}))
+	defer server.Close()
+
+	c, err := New(&storage.StorageConfig{
+		WebDAVURL:      server.URL,
+		PathPrefix:     prefix,
+		WebDAVUsername: "u",
+		WebDAVPassword: "p",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	objs, err := c.List(context.Background(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if requests != 1 {
+		t.Errorf("expected a single PROPFIND, got %d", requests)
+	}
+	if len(objs) != 2 {
+		t.Fatalf("expected 2 objects, got %d: %+v", len(objs), objs)
 	}
 }
