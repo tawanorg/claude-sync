@@ -67,6 +67,7 @@ func main() {
 		statusCmd(),
 		diffCmd(),
 		conflictsCmd(),
+		rebuildHistoryCmd(),
 		resetCmd(),
 		migrateCmd(),
 		updateCmd(),
@@ -1104,7 +1105,7 @@ func pushCmd() *cobra.Command {
 }
 
 func pullCmd() *cobra.Command {
-	var dryRun, force, includeMCP bool
+	var dryRun, force, includeMCP, rebuildHistory bool
 
 	cmd := &cobra.Command{
 		Use:   "pull",
@@ -1115,9 +1116,10 @@ On first pull with existing local files, you'll be prompted to confirm
 before any files are overwritten. Use --dry-run to preview changes first.
 
 Examples:
-  claude-sync pull              # Pull with safety prompts
-  claude-sync pull --dry-run    # Preview what would be changed
-  claude-sync pull --force      # Skip confirmation prompts`,
+  claude-sync pull                    # Pull with safety prompts
+  claude-sync pull --dry-run          # Preview what would be changed
+  claude-sync pull --force            # Skip confirmation prompts
+  claude-sync pull --rebuild-history  # Also rebuild history.jsonl from session files`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -1233,6 +1235,12 @@ Examples:
 				}
 			}
 
+			if rebuildHistory {
+				if err := runHistoryRebuild(); err != nil {
+					return fmt.Errorf("rebuilding history: %w", err)
+				}
+			}
+
 			return nil
 		},
 	}
@@ -1240,8 +1248,42 @@ Examples:
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be changed without making changes")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
 	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
+	cmd.Flags().BoolVar(&rebuildHistory, "rebuild-history", false, "Rebuild ~/.claude/history.jsonl from session files after pulling")
 
 	return cmd
+}
+
+func rebuildHistoryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rebuild-history",
+		Short: "Rebuild ~/.claude/history.jsonl from session files",
+		Long: `Reconstruct the prompt history by merging the current history.jsonl with
+user prompts extracted from session files under ~/.claude/projects/.
+
+history.jsonl is synced as a single file, so pushes from two devices are
+last-writer-wins and one device's entries can be lost, breaking the /resume
+session picker. Session files sync cleanly (one file per session), so the
+full history can always be rebuilt from them.
+
+Existing history entries are preserved as-is; recovered entries are merged
+in, deduplicated, and sorted by timestamp. The previous file is kept as
+history.jsonl.bak.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHistoryRebuild()
+		},
+	}
+}
+
+func runHistoryRebuild() error {
+	result, err := sync.RebuildHistory(config.ClaudeDir())
+	if err != nil {
+		return err
+	}
+	if !quiet {
+		fmt.Printf("%s✓%s History rebuilt: %d existing + %d recovered from sessions → %d entries\n",
+			colorGreen, colorReset, result.Existing, result.Reconstructed, result.Merged)
+	}
+	return nil
 }
 
 func statusCmd() *cobra.Command {
