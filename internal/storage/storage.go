@@ -16,6 +16,10 @@ const (
 	ProviderWebDAV Provider = "webdav"
 )
 
+// MaxDownloadSize is the maximum allowed size for a single downloaded object (100MB).
+// This prevents memory exhaustion from oversized or malicious remote files.
+const MaxDownloadSize = 100 * 1024 * 1024
+
 // ObjectInfo contains metadata about a stored object
 type ObjectInfo struct {
 	Key          string

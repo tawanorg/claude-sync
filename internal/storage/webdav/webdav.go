@@ -130,9 +130,14 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to download %s: HTTP %d", key, resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// Limit download size to prevent memory exhaustion
+	limited := io.LimitReader(resp.Body, storage.MaxDownloadSize+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", key, err)
+	}
+	if int64(len(data)) > storage.MaxDownloadSize {
+		return nil, fmt.Errorf("file %s exceeds maximum download size of %d bytes", key, storage.MaxDownloadSize)
 	}
 
 	return data, nil
@@ -169,6 +174,10 @@ func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
 }
 
 // propfindListBody is the PROPFIND request body used to enumerate objects.
+// maxPropfindResponseSize is the maximum allowed size for PROPFIND XML responses (10MB).
+// This prevents memory exhaustion from malicious servers sending huge XML payloads.
+const maxPropfindResponseSize = 10 * 1024 * 1024
+
 const propfindListBody = `<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:">
   <d:prop>
@@ -292,9 +301,14 @@ func (c *Client) propfind(ctx context.Context, url, depth string) ([]parsedRespo
 		return nil, resp.StatusCode, nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response size to prevent memory exhaustion from large XML payloads
+	limited := io.LimitReader(resp.Body, maxPropfindResponseSize+1)
+	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("failed to read PROPFIND response: %w", err)
+	}
+	if int64(len(body)) > maxPropfindResponseSize {
+		return nil, resp.StatusCode, fmt.Errorf("PROPFIND response exceeds maximum size of %d bytes", maxPropfindResponseSize)
 	}
 
 	responses, err := parsePropfindResponse(body)
@@ -358,9 +372,14 @@ func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, err
 		return nil, fmt.Errorf("failed to head %s: HTTP %d", key, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response size to prevent memory exhaustion
+	limited := io.LimitReader(resp.Body, maxPropfindResponseSize+1)
+	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PROPFIND response: %w", err)
+	}
+	if int64(len(body)) > maxPropfindResponseSize {
+		return nil, fmt.Errorf("PROPFIND response exceeds maximum size of %d bytes", maxPropfindResponseSize)
 	}
 
 	responses, err := parsePropfindResponse(body)
