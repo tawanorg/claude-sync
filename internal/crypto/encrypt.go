@@ -144,14 +144,12 @@ func encodeAgeIdentity(scalar []byte) (string, error) {
 	return strings.ToUpper(encoded), nil
 }
 
-// ValidatePassphraseStrength checks if a passphrase is strong enough
+// ValidatePassphraseStrength checks if a passphrase is strong enough.
+// Minimum 12 characters required - the fixed Argon2 salt means weak
+// passphrases are more vulnerable to brute-force attacks.
 func ValidatePassphraseStrength(passphrase string) error {
-	if len(passphrase) < 8 {
-		return fmt.Errorf("passphrase must be at least 8 characters")
-	}
 	if len(passphrase) < 12 {
-		// Warn but allow
-		return nil
+		return fmt.Errorf("passphrase must be at least 12 characters (got %d)", len(passphrase))
 	}
 	return nil
 }

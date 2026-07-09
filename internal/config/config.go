@@ -117,12 +117,21 @@ func ScopedSyncPaths(scope string) []string {
 	return SyncPaths
 }
 
+// ErrNoHomeDir is returned when the user's home directory cannot be determined.
+var ErrNoHomeDir = fmt.Errorf("could not determine home directory (is $HOME set?)")
+
 func ConfigDirPath() string {
+	path, _ := ConfigDirPathE()
+	return path
+}
+
+// ConfigDirPathE returns the config directory path or an error if home dir is unavailable.
+func ConfigDirPathE() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", ErrNoHomeDir
 	}
-	return filepath.Join(home, ConfigDir)
+	return filepath.Join(home, ConfigDir), nil
 }
 
 func ConfigFilePath() string {
@@ -138,11 +147,17 @@ func AgeKeyFilePath() string {
 }
 
 func ClaudeDir() string {
+	path, _ := ClaudeDirE()
+	return path
+}
+
+// ClaudeDirE returns the Claude directory path or an error if home dir is unavailable.
+func ClaudeDirE() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", ErrNoHomeDir
 	}
-	return filepath.Join(home, ".claude")
+	return filepath.Join(home, ".claude"), nil
 }
 
 // ClaudeJSONPath returns the path to ~/.claude.json where global MCP servers are configured.

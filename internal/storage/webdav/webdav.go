@@ -33,6 +33,13 @@ func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 		return nil, fmt.Errorf("WebDAV URL is required")
 	}
 
+	// Enforce HTTPS to protect Basic Auth credentials, except for localhost
+	if !strings.HasPrefix(baseURL, "https://") {
+		if !isLocalhost(baseURL) {
+			return nil, fmt.Errorf("WebDAV URL must use HTTPS to protect credentials (use https:// instead of http://)")
+		}
+	}
+
 	prefix := strings.Trim(cfg.PathPrefix, "/")
 
 	return &Client{
@@ -42,6 +49,22 @@ func New(cfg *storage.StorageConfig) (storage.Storage, error) {
 		password:   cfg.WebDAVPassword,
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}, nil
+}
+
+// isLocalhost checks if a URL points to localhost (safe for HTTP)
+func isLocalhost(url string) bool {
+	// Strip scheme
+	host := strings.TrimPrefix(url, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	// Get host part before any path
+	if idx := strings.Index(host, "/"); idx > 0 {
+		host = host[:idx]
+	}
+	// Remove port if present
+	if idx := strings.LastIndex(host, ":"); idx > 0 {
+		host = host[:idx]
+	}
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func (c *Client) fullURL(key string) string {

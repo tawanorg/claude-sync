@@ -53,6 +53,33 @@ func TestNew(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "HTTP URL rejected for security",
+			cfg: &storage.StorageConfig{
+				WebDAVURL:      "http://cloud.example.com/dav/",
+				WebDAVUsername: "user",
+				WebDAVPassword: "pass",
+			},
+			wantErr: true,
+		},
+		{
+			name: "HTTP localhost allowed",
+			cfg: &storage.StorageConfig{
+				WebDAVURL:      "http://localhost:8080/dav/",
+				WebDAVUsername: "user",
+				WebDAVPassword: "pass",
+			},
+			wantErr: false,
+		},
+		{
+			name: "HTTP 127.0.0.1 allowed",
+			cfg: &storage.StorageConfig{
+				WebDAVURL:      "http://127.0.0.1:8080/dav/",
+				WebDAVUsername: "user",
+				WebDAVPassword: "pass",
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
