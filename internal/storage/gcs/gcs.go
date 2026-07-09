@@ -12,8 +12,6 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	intstorage "github.com/tawanorg/claude-sync/internal/storage"
-
 	appstorage "github.com/tawanorg/claude-sync/internal/storage"
 )
 
@@ -84,13 +82,13 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 	defer rc.Close()
 
 	// Limit download size to prevent memory exhaustion
-	limited := io.LimitReader(rc, intstorage.MaxDownloadSize+1)
+	limited := io.LimitReader(rc, appstorage.MaxDownloadSize+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", key, err)
 	}
-	if int64(len(data)) > intstorage.MaxDownloadSize {
-		return nil, fmt.Errorf("file %s exceeds maximum download size of %d bytes", key, intstorage.MaxDownloadSize)
+	if int64(len(data)) > appstorage.MaxDownloadSize {
+		return nil, fmt.Errorf("file %s exceeds maximum download size of %d bytes", key, appstorage.MaxDownloadSize)
 	}
 
 	return data, nil
