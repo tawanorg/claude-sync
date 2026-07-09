@@ -543,7 +543,7 @@ func enterPassphraseAndVerify(ctx context.Context, store storage.Storage, keyPat
 
 			switch action {
 			case actionRetryPassphrase:
-				os.Remove(keyPath)
+				_ = os.Remove(keyPath)
 				fmt.Println()
 				printInfo("Enter a different passphrase:")
 				continue
@@ -552,7 +552,7 @@ func enterPassphraseAndVerify(ctx context.Context, store storage.Storage, keyPat
 				printInfo("Remote files will be cleared...")
 				return true, nil
 			case actionAbort:
-				os.Remove(keyPath)
+				_ = os.Remove(keyPath)
 				return false, fmt.Errorf("setup aborted")
 			}
 		}

@@ -78,7 +78,7 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to download %s: %w", key, err)
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 
 	// Limit download size to prevent memory exhaustion
 	limited := io.LimitReader(result.Body, storage.MaxDownloadSize+1)

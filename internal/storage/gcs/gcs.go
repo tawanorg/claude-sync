@@ -62,7 +62,7 @@ func (c *Client) Upload(ctx context.Context, key string, data []byte) error {
 	wc.ContentType = "application/octet-stream"
 
 	if _, err := wc.Write(data); err != nil {
-		wc.Close()
+		_ = wc.Close()
 		return fmt.Errorf("failed to write %s: %w", key, err)
 	}
 
@@ -79,7 +79,7 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", key, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	// Limit download size to prevent memory exhaustion
 	limited := io.LimitReader(rc, appstorage.MaxDownloadSize+1)
