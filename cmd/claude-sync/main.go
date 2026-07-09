@@ -2006,7 +2006,7 @@ func getLatestRelease() (*GitHubRelease, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -2073,7 +2073,7 @@ func downloadBinary(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
@@ -2102,7 +2102,7 @@ func replaceBinary(execPath string, newBinary []byte) error {
 	// Backup current binary
 	backupPath := execPath + ".old"
 	if err := os.Rename(execPath, backupPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to backup current binary: %w", err)
 	}
 
@@ -2114,7 +2114,7 @@ func replaceBinary(execPath string, newBinary []byte) error {
 	}
 
 	// Remove backup
-	os.Remove(backupPath)
+	_ = os.Remove(backupPath)
 
 	return nil
 }
@@ -2628,7 +2628,7 @@ func getAllReleases(limit int) ([]GitHubReleaseWithBody, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
