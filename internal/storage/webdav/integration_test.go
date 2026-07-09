@@ -98,7 +98,8 @@ func (s *mockWebDAVServer) handlePropfind(w http.ResponseWriter, r *http.Request
 		responses = append(responses, s.buildPropfindEntry("/"+path+"/", 0, true, time.Now()))
 	}
 
-	if depth == "infinity" || depth == "1" {
+	switch depth {
+	case "infinity", "1":
 		prefix := path
 		if prefix != "" {
 			prefix += "/"
@@ -108,7 +109,7 @@ func (s *mockWebDAVServer) handlePropfind(w http.ResponseWriter, r *http.Request
 				responses = append(responses, s.buildPropfindEntry("/"+key, int64(len(f.data)), false, f.modTime))
 			}
 		}
-	} else if depth == "0" {
+	case "0":
 		f, ok := s.files[path]
 		if ok {
 			responses = append(responses, s.buildPropfindEntry("/"+path, int64(len(f.data)), f.isDir, f.modTime))

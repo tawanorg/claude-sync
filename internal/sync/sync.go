@@ -1099,7 +1099,7 @@ func gzipDecompress(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	// Limit decompressed size to prevent decompression bomb attacks
 	limited := io.LimitReader(r, maxDecompressedSize+1)

@@ -92,9 +92,7 @@ func TestClaudeDir(t *testing.T) {
 func TestSaveAndLoad(t *testing.T) {
 	// Create a temporary directory to use as home
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	// Create config directory
 	configDir := filepath.Join(tmpDir, ConfigDir)
@@ -162,9 +160,7 @@ encryption_key_path: ~/.claude-sync/age-key.txt
 
 func TestLoadNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	_, err := Load()
 	if err == nil {
@@ -178,9 +174,7 @@ func TestLoadNotFound(t *testing.T) {
 
 func TestExists(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	// Should not exist initially
 	if Exists() {

@@ -105,7 +105,7 @@ func (c *Client) Upload(ctx context.Context, key string, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to upload %s: %w", key, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -121,7 +121,7 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to download %s: %w", key, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("object not found: %s", key)
@@ -130,9 +130,14 @@ func (c *Client) Download(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to download %s: HTTP %d", key, resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// Limit download size to prevent memory exhaustion
+	limited := io.LimitReader(resp.Body, storage.MaxDownloadSize+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", key, err)
+	}
+	if int64(len(data)) > storage.MaxDownloadSize {
+		return nil, fmt.Errorf("file %s exceeds maximum download size of %d bytes", key, storage.MaxDownloadSize)
 	}
 
 	return data, nil
@@ -144,7 +149,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete %s: %w", key, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("failed to delete %s: HTTP %d", key, resp.StatusCode)
@@ -169,6 +174,10 @@ func (c *Client) DeleteBatch(ctx context.Context, keys []string) error {
 }
 
 // propfindListBody is the PROPFIND request body used to enumerate objects.
+// maxPropfindResponseSize is the maximum allowed size for PROPFIND XML responses (10MB).
+// This prevents memory exhaustion from malicious servers sending huge XML payloads.
+const maxPropfindResponseSize = 10 * 1024 * 1024
+
 const propfindListBody = `<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:">
   <d:prop>
@@ -286,15 +295,20 @@ func (c *Client) propfind(ctx context.Context, url, depth string) ([]parsedRespo
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 207 {
 		return nil, resp.StatusCode, nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response size to prevent memory exhaustion from large XML payloads
+	limited := io.LimitReader(resp.Body, maxPropfindResponseSize+1)
+	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("failed to read PROPFIND response: %w", err)
+	}
+	if int64(len(body)) > maxPropfindResponseSize {
+		return nil, resp.StatusCode, fmt.Errorf("PROPFIND response exceeds maximum size of %d bytes", maxPropfindResponseSize)
 	}
 
 	responses, err := parsePropfindResponse(body)
@@ -348,7 +362,7 @@ func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to head %s: %w", key, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("object not found: %s", key)
@@ -358,9 +372,14 @@ func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, err
 		return nil, fmt.Errorf("failed to head %s: HTTP %d", key, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response size to prevent memory exhaustion
+	limited := io.LimitReader(resp.Body, maxPropfindResponseSize+1)
+	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PROPFIND response: %w", err)
+	}
+	if int64(len(body)) > maxPropfindResponseSize {
+		return nil, fmt.Errorf("PROPFIND response exceeds maximum size of %d bytes", maxPropfindResponseSize)
 	}
 
 	responses, err := parsePropfindResponse(body)
@@ -398,7 +417,7 @@ func (c *Client) BucketExists(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to check WebDAV path: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 207 || resp.StatusCode == http.StatusOK {
 		return true, nil
@@ -413,7 +432,7 @@ func (c *Client) BucketExists(ctx context.Context) (bool, error) {
 		if mkErr != nil {
 			return false, fmt.Errorf("failed to create WebDAV directory '%s': %w", c.pathPrefix, mkErr)
 		}
-		mkResp.Body.Close()
+		_ = mkResp.Body.Close()
 		if mkResp.StatusCode == http.StatusCreated || mkResp.StatusCode == http.StatusMethodNotAllowed {
 			return true, nil
 		}
@@ -451,7 +470,7 @@ func (c *Client) ensureParentDirs(ctx context.Context, key string) error {
 		if err != nil {
 			return err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		// 201 = created, 405 = already exists — both fine
 		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusMethodNotAllowed && resp.StatusCode != http.StatusConflict {
 			if resp.StatusCode == http.StatusNotFound {

@@ -115,14 +115,14 @@ func (s *SyncState) Save() error {
 		return fmt.Errorf("failed to create temp state file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) // no-op if rename succeeded
+	defer func() { _ = os.Remove(tmpPath) }() // no-op if rename succeeded
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("failed to write state: %w", err)
 	}
 	if err := tmp.Chmod(0600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("failed to set state permissions: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -206,7 +206,7 @@ func HashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

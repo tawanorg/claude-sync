@@ -263,7 +263,7 @@ func TestPushDeletesRemovedFiles(t *testing.T) {
 	}
 
 	// Delete local file
-	os.Remove(filepath.Join(env.claudeDir, "CLAUDE.md"))
+	_ = os.Remove(filepath.Join(env.claudeDir, "CLAUDE.md"))
 
 	// Push again
 	result, err := env.syncer.Push(ctx)

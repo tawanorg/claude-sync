@@ -543,7 +543,7 @@ func enterPassphraseAndVerify(ctx context.Context, store storage.Storage, keyPat
 
 			switch action {
 			case actionRetryPassphrase:
-				os.Remove(keyPath)
+				_ = os.Remove(keyPath)
 				fmt.Println()
 				printInfo("Enter a different passphrase:")
 				continue
@@ -552,7 +552,7 @@ func enterPassphraseAndVerify(ctx context.Context, store storage.Storage, keyPat
 				printInfo("Remote files will be cleared...")
 				return true, nil
 			case actionAbort:
-				os.Remove(keyPath)
+				_ = os.Remove(keyPath)
 				return false, fmt.Errorf("setup aborted")
 			}
 		}
@@ -2006,7 +2006,7 @@ func getLatestRelease() (*GitHubRelease, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -2063,19 +2063,33 @@ func verifyChecksum(release *GitHubRelease, assetName string, data []byte) error
 	return fmt.Errorf("checksums.txt has no entry for %s", assetName)
 }
 
+// maxBinarySize is the maximum allowed size for update binary downloads (200MB).
+// This prevents downloading excessively large files during update.
+const maxBinarySize = 200 * 1024 * 1024
+
 func downloadBinary(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 
-	return io.ReadAll(resp.Body)
+	// Limit download size to prevent downloading excessively large files
+	limited := io.LimitReader(resp.Body, maxBinarySize+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBinarySize {
+		return nil, fmt.Errorf("binary exceeds maximum size of %d bytes", maxBinarySize)
+	}
+
+	return data, nil
 }
 
 func replaceBinary(execPath string, newBinary []byte) error {
@@ -2088,7 +2102,7 @@ func replaceBinary(execPath string, newBinary []byte) error {
 	// Backup current binary
 	backupPath := execPath + ".old"
 	if err := os.Rename(execPath, backupPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to backup current binary: %w", err)
 	}
 
@@ -2100,7 +2114,7 @@ func replaceBinary(execPath string, newBinary []byte) error {
 	}
 
 	// Remove backup
-	os.Remove(backupPath)
+	_ = os.Remove(backupPath)
 
 	return nil
 }
@@ -2614,7 +2628,7 @@ func getAllReleases(limit int) ([]GitHubReleaseWithBody, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
