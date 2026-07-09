@@ -110,7 +110,10 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 	curve25519.ScalarBaseMult(&publicKey, &privateKey)
 
 	// Encode as age identity string (Bech32 with AGE-SECRET-KEY- prefix)
-	identityStr := encodeAgeIdentity(privateKey[:])
+	identityStr, err := encodeAgeIdentity(privateKey[:])
+	if err != nil {
+		return fmt.Errorf("failed to encode age identity: %w", err)
+	}
 
 	if err := os.WriteFile(keyPath, []byte(identityStr+"\n"), 0600); err != nil {
 		return fmt.Errorf("failed to write age key: %w", err)
@@ -120,7 +123,7 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 }
 
 // encodeAgeIdentity encodes a 32-byte scalar as an age identity string
-func encodeAgeIdentity(scalar []byte) string {
+func encodeAgeIdentity(scalar []byte) (string, error) {
 	// age uses Bech32 encoding with HRP "age-secret-key-"
 	// The bech32 library works with lowercase, then we convert to uppercase
 	hrp := "age-secret-key-"
@@ -128,18 +131,17 @@ func encodeAgeIdentity(scalar []byte) string {
 	// Convert 8-bit bytes to 5-bit groups using the bech32 library
 	converted, err := bech32.ConvertBits(scalar, 8, 5, true)
 	if err != nil {
-		// This should never fail for valid input
-		return ""
+		return "", fmt.Errorf("failed to convert bits for age identity: %w", err)
 	}
 
 	// Encode using bech32
 	encoded, err := bech32.Encode(hrp, converted)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to bech32 encode age identity: %w", err)
 	}
 
 	// Age uses uppercase for secret keys
-	return strings.ToUpper(encoded)
+	return strings.ToUpper(encoded), nil
 }
 
 // ValidatePassphraseStrength checks if a passphrase is strong enough

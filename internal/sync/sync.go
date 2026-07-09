@@ -26,6 +26,10 @@ import (
 
 const defaultWorkers = 10
 
+// maxDecompressedSize is the maximum allowed size for decompressed data (500MB).
+// This prevents decompression bomb attacks from consuming excessive memory.
+const maxDecompressedSize = 500 * 1024 * 1024
+
 // ManifestKey is the remote storage key for file metadata (mtimes).
 const ManifestKey = "_metadata/manifest.json"
 
@@ -1096,5 +1100,15 @@ func gzipDecompress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	return io.ReadAll(r)
+
+	// Limit decompressed size to prevent decompression bomb attacks
+	limited := io.LimitReader(r, maxDecompressedSize+1)
+	result, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(result)) > maxDecompressedSize {
+		return nil, fmt.Errorf("decompressed data exceeds %d bytes limit", maxDecompressedSize)
+	}
+	return result, nil
 }

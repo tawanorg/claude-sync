@@ -328,8 +328,15 @@ func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string, excludeF
 		}
 	}
 
-	// Check for deleted files
+	// Check for deleted files - snapshot keys under lock to avoid race condition
+	s.mu.Lock()
+	knownPaths := make([]string, 0, len(s.Files))
 	for relPath := range s.Files {
+		knownPaths = append(knownPaths, relPath)
+	}
+	s.mu.Unlock()
+
+	for _, relPath := range knownPaths {
 		if _, exists := localFiles[relPath]; !exists {
 			changes = append(changes, FileChange{
 				Path:   relPath,

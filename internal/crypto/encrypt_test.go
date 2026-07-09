@@ -383,7 +383,10 @@ func TestEncodeAgeIdentity(t *testing.T) {
 	scalar[31] &= 127
 	scalar[31] |= 64
 
-	identity := encodeAgeIdentity(scalar)
+	identity, err := encodeAgeIdentity(scalar)
+	if err != nil {
+		t.Fatalf("encodeAgeIdentity failed: %v", err)
+	}
 
 	// Check prefix
 	if !strings.HasPrefix(identity, "AGE-SECRET-KEY-1") {
@@ -403,7 +406,7 @@ func TestEncodeAgeIdentity(t *testing.T) {
 	}
 
 	// Verify it's parseable by age
-	_, err := age.ParseX25519Identity(identity)
+	_, err = age.ParseX25519Identity(identity)
 	if err != nil {
 		t.Errorf("Encoded identity is not valid: %v", err)
 	}
