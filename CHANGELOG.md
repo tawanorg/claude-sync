@@ -1,3 +1,10 @@
+## [1.14.6](https://github.com/tawanorg/claude-sync/compare/v1.14.5...v1.14.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* **security:** add download size limits to prevent memory exhaustion ([#57](https://github.com/tawanorg/claude-sync/issues/57)) ([88878cb](https://github.com/tawanorg/claude-sync/commit/88878cb6088f43f0c0259fe8f7c7ab3609e29267))
+
 ## [1.14.5](https://github.com/tawanorg/claude-sync/compare/v1.14.4...v1.14.5) (2026-07-09)
 
 
