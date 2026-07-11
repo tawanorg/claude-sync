@@ -130,6 +130,7 @@ func initCmd() *cobra.Command {
 
 	// S3-compatible (custom endpoint) flags
 	var s3Endpoint string
+	var usePathStyle bool
 
 	// GCS flags
 	var gcsProjectID, gcsCredentialsFile string
@@ -167,7 +168,7 @@ Examples:
 			}
 
 			// Normal flow: full setup
-			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope, usePassphrase, force)
+			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope, usePathStyle, usePassphrase, force)
 		},
 	}
 
@@ -188,6 +189,7 @@ Examples:
 
 	// S3-compatible flags
 	cmd.Flags().StringVar(&s3Endpoint, "endpoint", "", "Custom S3-compatible endpoint URL (e.g. https://s3.us-west-004.backblazeb2.com)")
+	cmd.Flags().BoolVar(&usePathStyle, "use-path-style", false, "Use path-style URL for S3-compatible endpoints")
 
 	// GCS flags
 	cmd.Flags().StringVar(&gcsProjectID, "project-id", "", "GCP Project ID (GCS)")
@@ -272,7 +274,7 @@ func resolveScope(scope string) (string, error) {
 }
 
 // initFullSetup handles the full init wizard
-func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope string, usePassphrase, force bool) error {
+func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope string, usePathStyle, usePassphrase, force bool) error {
 	if config.Exists() && !force {
 		var overwrite bool
 		prompt := &survey.Confirm{
@@ -331,7 +333,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 	case "gcs":
 		storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
 	case "s3-compatible":
-		storageCfg, err = runS3CompatibleWizard(s3Endpoint, accessKey, secretKey, s3Region, bucket)
+		storageCfg, err = runS3CompatibleWizard(s3Endpoint, accessKey, secretKey, s3Region, bucket, usePathStyle)
 	case "webdav":
 		storageCfg, err = runWebDAVWizard(webdavURL, webdavUsername, webdavPassword, webdavPathPrefix)
 	default:
@@ -352,7 +354,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 	fmt.Println()
 
 	configDir := config.ConfigDirPath()
-	if err := os.MkdirAll(configDir, 0700); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -734,11 +736,11 @@ func runS3Wizard(accessKey, secretKey, region, bucket string) (*storage.StorageC
 // It reuses the S3 storage engine (ProviderS3 with Endpoint set); the engine
 // relaxes checksum behavior for custom endpoints so these providers accept the
 // uploads. The signing region is pre-filled from the endpoint when derivable.
-func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string) (*storage.StorageConfig, error) {
+func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string, usePathStyle bool) (*storage.StorageConfig, error) {
 	fmt.Printf("  %sS3-Compatible Setup%s\n\n", colorBold, colorReset)
 	printInfo("Works with any S3-compatible provider: Backblaze B2, MinIO, Wasabi, DigitalOcean Spaces, ...")
 	fmt.Println()
-	printInfo("You need the provider's S3 endpoint URL, an access key/secret, and a bucket.")
+	printInfo("You need the provider's S3 endpoint URL, an access key/secret, a bucket, and optionally whether to use path-style URLs.")
 	fmt.Println()
 
 	// Ask the endpoint first so the signing region can be derived from it.
@@ -757,15 +759,17 @@ func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string
 	}
 
 	answers := struct {
-		AccessKey string
-		SecretKey string
-		Region    string
-		Bucket    string
+		AccessKey    string
+		SecretKey    string
+		Region       string
+		Bucket       string
+		UsePathStyle bool
 	}{
-		AccessKey: accessKey,
-		SecretKey: secretKey,
-		Region:    region,
-		Bucket:    bucket,
+		AccessKey:    accessKey,
+		SecretKey:    secretKey,
+		Region:       region,
+		Bucket:       bucket,
+		UsePathStyle: usePathStyle,
 	}
 
 	questions := []*survey.Question{
@@ -801,6 +805,13 @@ func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string
 			},
 			Validate: survey.Required,
 		},
+		{
+			Name: "UsePathStyle",
+			Prompt: &survey.Confirm{
+				Message: "Use path-style URL (e.g. http://s3.amazonaws.com/bucket/key)?",
+				Default: usePathStyle,
+			},
+		},
 	}
 
 	if err := survey.Ask(questions, &answers); err != nil {
@@ -814,6 +825,7 @@ func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string
 		SecretAccessKey: answers.SecretKey,
 		Region:          answers.Region,
 		Endpoint:        storage.NormalizeEndpoint(endpoint),
+		UsePathStyle:    answers.UsePathStyle,
 	}, nil
 }
 
@@ -2095,7 +2107,7 @@ func downloadBinary(url string) ([]byte, error) {
 func replaceBinary(execPath string, newBinary []byte) error {
 	// Write to a temporary file first
 	tmpPath := execPath + ".new"
-	if err := os.WriteFile(tmpPath, newBinary, 0755); err != nil {
+	if err := os.WriteFile(tmpPath, newBinary, 0o755); err != nil {
 		return fmt.Errorf("failed to write new binary: %w", err)
 	}
 
@@ -2344,7 +2356,7 @@ func createBackup(scope string) (string, error) {
 	backupDir := claudeDir + ".backup." + timestamp
 
 	// Create backup directory
-	if err := os.MkdirAll(backupDir, 0700); err != nil {
+	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
@@ -2360,7 +2372,7 @@ func createBackup(scope string) (string, error) {
 
 		// Ensure destination directory exists
 		dstDir := filepath.Dir(dstPath)
-		if err := os.MkdirAll(dstDir, 0700); err != nil {
+		if err := os.MkdirAll(dstDir, 0o700); err != nil {
 			return "", fmt.Errorf("failed to create directory %s: %w", dstDir, err)
 		}
 
@@ -2370,7 +2382,7 @@ func createBackup(scope string) (string, error) {
 			return "", fmt.Errorf("failed to read %s: %w", relPath, err)
 		}
 
-		if err := os.WriteFile(dstPath, data, 0600); err != nil {
+		if err := os.WriteFile(dstPath, data, 0o600); err != nil {
 			return "", fmt.Errorf("failed to write %s: %w", relPath, err)
 		}
 	}

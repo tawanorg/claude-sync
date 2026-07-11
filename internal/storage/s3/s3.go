@@ -28,7 +28,8 @@ type Client struct {
 
 // New creates a new S3 storage client
 func New(cfg *storage.StorageConfig) (storage.Storage, error) {
-	awsCfg, err := config.LoadDefaultConfig(context.Background(),
+	awsCfg, err := config.LoadDefaultConfig(
+		context.Background(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.AccessKeyID,
 			cfg.SecretAccessKey,
@@ -61,6 +62,7 @@ func buildS3Options(cfg *storage.StorageConfig) func(*s3.Options) {
 			o.BaseEndpoint = aws.String(storage.NormalizeEndpoint(cfg.Endpoint))
 			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 			o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+			o.UsePathStyle = cfg.UsePathStyle
 		}
 	}
 }

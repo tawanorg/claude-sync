@@ -44,7 +44,8 @@ func TestBuildS3Options_EndpointWithoutSchemeNormalized(t *testing.T) {
 
 func TestBuildS3Options_AWSDefaultUnchanged(t *testing.T) {
 	cfg := &storage.StorageConfig{
-		Region: "us-east-1", // real AWS S3: no custom endpoint
+		Region:       "us-east-1", // real AWS S3: no custom endpoint
+		UsePathStyle: true,        // should not be considered
 	}
 
 	opts := &awss3.Options{}
@@ -58,5 +59,8 @@ func TestBuildS3Options_AWSDefaultUnchanged(t *testing.T) {
 	}
 	if opts.ResponseChecksumValidation != aws.ResponseChecksumValidationUnset {
 		t.Errorf("ResponseChecksumValidation = %v, want Unset (AWS default preserved)", opts.ResponseChecksumValidation)
+	}
+	if opts.UsePathStyle != false {
+		t.Errorf("UsePathStyle = %v, want false (AWS default preserved)", opts.UsePathStyle)
 	}
 }

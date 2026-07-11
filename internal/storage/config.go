@@ -61,6 +61,7 @@ type StorageConfig struct {
 	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
 	Endpoint        string `yaml:"endpoint,omitempty"`
 	Region          string `yaml:"region,omitempty"`
+	UsePathStyle    bool   `yaml:"use_path_style,omitempty"`
 
 	// R2-specific
 	AccountID string `yaml:"account_id,omitempty"`
