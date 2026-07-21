@@ -66,6 +66,15 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-formatted. Run 'make fmt':"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
