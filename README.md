@@ -130,6 +130,14 @@ claude-sync init --provider s3-compatible --endpoint https://s3.us-west-004.back
 
 You'll need: Endpoint URL, Access Key ID, Secret Access Key, Bucket. The signing region is auto-detected from the endpoint (e.g. `us-west-004`); for providers that ignore it, `auto` is used.
 
+For servers that don't resolve buckets as subdomains (e.g. Ceph RGW, or MinIO without wildcard DNS), add `--use-path-style` to address objects as `endpoint/bucket/key` instead of `bucket.endpoint/key`:
+
+```bash
+claude-sync init --provider s3-compatible --endpoint https://ceph.example.com --use-path-style
+```
+
+It's off by default and unnecessary for Backblaze B2, Wasabi, and DigitalOcean Spaces, which all support virtual-hosted addressing.
+
 > Custom endpoints automatically relax the AWS SDK's default integrity-checksum headers, which some S3-compatible providers reject. AWS S3 behavior is unchanged.
 </details>
 

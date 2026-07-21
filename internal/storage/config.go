@@ -62,6 +62,12 @@ type StorageConfig struct {
 	Endpoint        string `yaml:"endpoint,omitempty"`
 	Region          string `yaml:"region,omitempty"`
 
+	// UsePathStyle forces path-style addressing (endpoint/bucket/key) instead of
+	// virtual-hosted style (bucket.endpoint/key). Required by S3-compatible
+	// servers that don't resolve buckets as subdomains (e.g. Ceph RGW, MinIO
+	// without wildcard DNS). Only honored when a custom Endpoint is set.
+	UsePathStyle bool `yaml:"use_path_style,omitempty"`
+
 	// R2-specific
 	AccountID string `yaml:"account_id,omitempty"`
 

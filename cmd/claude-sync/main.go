@@ -130,6 +130,7 @@ func initCmd() *cobra.Command {
 
 	// S3-compatible (custom endpoint) flags
 	var s3Endpoint string
+	var s3UsePathStyle bool
 
 	// GCS flags
 	var gcsProjectID, gcsCredentialsFile string
@@ -167,7 +168,7 @@ Examples:
 			}
 
 			// Normal flow: full setup
-			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope, usePassphrase, force)
+			return initFullSetup(ctx, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, s3UsePathStyle, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope, usePassphrase, force)
 		},
 	}
 
@@ -188,6 +189,7 @@ Examples:
 
 	// S3-compatible flags
 	cmd.Flags().StringVar(&s3Endpoint, "endpoint", "", "Custom S3-compatible endpoint URL (e.g. https://s3.us-west-004.backblazeb2.com)")
+	cmd.Flags().BoolVar(&s3UsePathStyle, "use-path-style", false, "Use path-style URLs (endpoint/bucket/key) for S3-compatible endpoints that don't resolve buckets as subdomains (e.g. Ceph, MinIO)")
 
 	// GCS flags
 	cmd.Flags().StringVar(&gcsProjectID, "project-id", "", "GCP Project ID (GCS)")
@@ -272,7 +274,7 @@ func resolveScope(scope string) (string, error) {
 }
 
 // initFullSetup handles the full init wizard
-func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope string, usePassphrase, force bool) error {
+func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, accessKey, secretKey, s3Region, s3Endpoint string, s3UsePathStyle bool, gcsProjectID, gcsCredentialsFile, webdavURL, webdavUsername, webdavPassword, webdavPathPrefix, scope string, usePassphrase, force bool) error {
 	if config.Exists() && !force {
 		var overwrite bool
 		prompt := &survey.Confirm{
@@ -331,7 +333,7 @@ func initFullSetup(ctx context.Context, keyPath, provider, bucket, accountID, ac
 	case "gcs":
 		storageCfg, err = runGCSWizard(gcsProjectID, gcsCredentialsFile, bucket)
 	case "s3-compatible":
-		storageCfg, err = runS3CompatibleWizard(s3Endpoint, accessKey, secretKey, s3Region, bucket)
+		storageCfg, err = runS3CompatibleWizard(s3Endpoint, accessKey, secretKey, s3Region, bucket, s3UsePathStyle)
 	case "webdav":
 		storageCfg, err = runWebDAVWizard(webdavURL, webdavUsername, webdavPassword, webdavPathPrefix)
 	default:
@@ -734,7 +736,7 @@ func runS3Wizard(accessKey, secretKey, region, bucket string) (*storage.StorageC
 // It reuses the S3 storage engine (ProviderS3 with Endpoint set); the engine
 // relaxes checksum behavior for custom endpoints so these providers accept the
 // uploads. The signing region is pre-filled from the endpoint when derivable.
-func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string) (*storage.StorageConfig, error) {
+func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string, usePathStyle bool) (*storage.StorageConfig, error) {
 	fmt.Printf("  %sS3-Compatible Setup%s\n\n", colorBold, colorReset)
 	printInfo("Works with any S3-compatible provider: Backblaze B2, MinIO, Wasabi, DigitalOcean Spaces, ...")
 	fmt.Println()
@@ -757,15 +759,17 @@ func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string
 	}
 
 	answers := struct {
-		AccessKey string
-		SecretKey string
-		Region    string
-		Bucket    string
+		AccessKey    string
+		SecretKey    string
+		Region       string
+		Bucket       string
+		UsePathStyle bool
 	}{
-		AccessKey: accessKey,
-		SecretKey: secretKey,
-		Region:    region,
-		Bucket:    bucket,
+		AccessKey:    accessKey,
+		SecretKey:    secretKey,
+		Region:       region,
+		Bucket:       bucket,
+		UsePathStyle: usePathStyle,
 	}
 
 	questions := []*survey.Question{
@@ -801,6 +805,14 @@ func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string
 			},
 			Validate: survey.Required,
 		},
+		{
+			Name: "UsePathStyle",
+			Prompt: &survey.Confirm{
+				Message: "Use path-style URLs (endpoint/bucket/key)?",
+				Default: usePathStyle,
+				Help:    "Enable for servers that don't resolve buckets as subdomains, e.g. Ceph RGW or MinIO without wildcard DNS. Leave off for Backblaze B2, Wasabi, DigitalOcean Spaces.",
+			},
+		},
 	}
 
 	if err := survey.Ask(questions, &answers); err != nil {
@@ -814,6 +826,7 @@ func runS3CompatibleWizard(endpoint, accessKey, secretKey, region, bucket string
 		SecretAccessKey: answers.SecretKey,
 		Region:          answers.Region,
 		Endpoint:        storage.NormalizeEndpoint(endpoint),
+		UsePathStyle:    answers.UsePathStyle,
 	}, nil
 }
 

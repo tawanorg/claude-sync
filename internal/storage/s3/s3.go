@@ -61,6 +61,10 @@ func buildS3Options(cfg *storage.StorageConfig) func(*s3.Options) {
 			o.BaseEndpoint = aws.String(storage.NormalizeEndpoint(cfg.Endpoint))
 			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 			o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+			// Path-style addressing for servers that don't resolve buckets as
+			// subdomains (Ceph RGW, MinIO without wildcard DNS). Left false for
+			// AWS, which prefers virtual-hosted style.
+			o.UsePathStyle = cfg.UsePathStyle
 		}
 	}
 }

@@ -28,6 +28,36 @@ func TestBuildS3Options_CustomEndpoint(t *testing.T) {
 	}
 }
 
+func TestBuildS3Options_UsePathStyleWithCustomEndpoint(t *testing.T) {
+	cfg := &storage.StorageConfig{
+		Endpoint:     "https://ceph.internal.example.com",
+		UsePathStyle: true,
+	}
+
+	opts := &awss3.Options{}
+	buildS3Options(cfg)(opts)
+
+	if !opts.UsePathStyle {
+		t.Error("UsePathStyle = false, want true for custom endpoint with UsePathStyle set")
+	}
+}
+
+func TestBuildS3Options_UsePathStyleIgnoredWithoutEndpoint(t *testing.T) {
+	// UsePathStyle only applies to custom endpoints; on AWS-native (no endpoint)
+	// it must be ignored so virtual-hosted addressing is preserved.
+	cfg := &storage.StorageConfig{
+		Region:       "us-east-1",
+		UsePathStyle: true,
+	}
+
+	opts := &awss3.Options{}
+	buildS3Options(cfg)(opts)
+
+	if opts.UsePathStyle {
+		t.Error("UsePathStyle = true, want false when no custom endpoint is configured")
+	}
+}
+
 func TestBuildS3Options_EndpointWithoutSchemeNormalized(t *testing.T) {
 	cfg := &storage.StorageConfig{
 		Endpoint: "s3.eu-central-003.backblazeb2.com", // no scheme
