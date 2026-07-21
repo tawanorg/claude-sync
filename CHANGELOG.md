@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/tawanorg/claude-sync/compare/v1.15.0...v1.16.0) (2026-07-21)
+
+
+### Features
+
+* **sync:** add rebuild-history to recover lost /resume prompt history ([#63](https://github.com/tawanorg/claude-sync/issues/63)) ([beff293](https://github.com/tawanorg/claude-sync/commit/beff29310fc5132e1b20d66b24b5b34ad6d318d3))
+
 # [1.15.0](https://github.com/tawanorg/claude-sync/compare/v1.14.6...v1.15.0) (2026-07-21)
 
 
