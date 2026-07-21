@@ -249,6 +249,7 @@ claude-sync pull        # Download remote changes from cloud storage
 claude-sync status      # Show pending local changes
 claude-sync diff        # Show differences between local and remote
 claude-sync conflicts   # List and resolve conflicts
+claude-sync rebuild-history  # Rebuild ~/.claude/history.jsonl from session files
 claude-sync reset       # Reset configuration (forgot passphrase)
 claude-sync migrate     # Convert legacy remote keys to portable path-mapped keys
 claude-sync update      # Update to latest version (verifies release checksums)
@@ -259,10 +260,26 @@ claude-sync --help      # Show all commands
 ### Pull Options
 
 ```bash
-claude-sync pull              # Normal pull (prompts if existing files)
-claude-sync pull --dry-run    # Preview what would change
-claude-sync pull --force      # Skip confirmation prompts
+claude-sync pull                    # Normal pull (prompts if existing files)
+claude-sync pull --dry-run          # Preview what would change
+claude-sync pull --force            # Skip confirmation prompts
+claude-sync pull --rebuild-history  # Also rebuild history.jsonl after pulling
 ```
+
+### Rebuilding Prompt History
+
+`history.jsonl` is synced as a single file, so pushes from two devices are
+last-writer-wins and one device's prompt-history entries can be lost — which
+breaks the `/resume` session picker. Session files sync cleanly (one file per
+session), so the history can always be reconstructed from them:
+
+```bash
+claude-sync rebuild-history         # One-off rebuild
+claude-sync pull --rebuild-history  # Rebuild automatically after a pull
+```
+
+Every existing entry is preserved, recovered prompts are merged in and sorted by
+timestamp, and the previous file is kept as `history.jsonl.bak`.
 
 ### Init Options
 

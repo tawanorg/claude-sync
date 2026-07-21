@@ -67,6 +67,7 @@ func main() {
 		statusCmd(),
 		diffCmd(),
 		conflictsCmd(),
+		rebuildHistoryCmd(),
 		resetCmd(),
 		migrateCmd(),
 		updateCmd(),
@@ -1117,7 +1118,7 @@ func pushCmd() *cobra.Command {
 }
 
 func pullCmd() *cobra.Command {
-	var dryRun, force, includeMCP bool
+	var dryRun, force, includeMCP, rebuildHistory bool
 
 	cmd := &cobra.Command{
 		Use:   "pull",
@@ -1246,6 +1247,13 @@ Examples:
 				}
 			}
 
+			// Rebuild prompt history from the freshly-pulled session files.
+			if rebuildHistory && !dryRun {
+				if err := runHistoryRebuild(); err != nil {
+					return fmt.Errorf("rebuilding history: %w", err)
+				}
+			}
+
 			return nil
 		},
 	}
@@ -1253,6 +1261,7 @@ Examples:
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be changed without making changes")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
 	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
+	cmd.Flags().BoolVar(&rebuildHistory, "rebuild-history", false, "Rebuild ~/.claude/history.jsonl from session files after pulling")
 
 	return cmd
 }
@@ -1806,6 +1815,44 @@ Examples:
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
 
 	return cmd
+}
+
+func rebuildHistoryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rebuild-history",
+		Short: "Rebuild ~/.claude/history.jsonl from session files",
+		Long: `Reconstruct the prompt history by merging the current history.jsonl with
+user prompts extracted from session files under ~/.claude/projects/.
+
+history.jsonl is synced as a single file, so pushes from two devices are
+last-writer-wins and one device's entries can be lost, breaking the /resume
+session picker. Session files sync cleanly (one file per session), so the
+full history can always be rebuilt from them.
+
+Existing entries are preserved as-is; recovered entries are merged in,
+deduplicated, and sorted by timestamp. The previous file is kept as
+history.jsonl.bak.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHistoryRebuild()
+		},
+	}
+}
+
+// runHistoryRebuild rebuilds history.jsonl and reports how many prompts were
+// recovered from session files.
+func runHistoryRebuild() error {
+	claudeDir, err := config.ClaudeDirE()
+	if err != nil {
+		return err
+	}
+	result, err := sync.RebuildHistory(claudeDir)
+	if err != nil {
+		return err
+	}
+	recovered := result.Merged - result.Existing
+	printSuccess(fmt.Sprintf("Rebuilt history.jsonl: %d entries (%d existing + %d recovered from sessions)",
+		result.Merged, result.Existing, recovered))
+	return nil
 }
 
 func migrateCmd() *cobra.Command {
