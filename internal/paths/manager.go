@@ -276,11 +276,11 @@ func (m *Manager) HasExclude(pattern string) bool {
 
 // Status returns information about the current sync configuration.
 type Status struct {
-	SyncPaths     []string
-	Excludes      []string
-	CustomPaths   []string // Non-default paths
+	SyncPaths       []string
+	Excludes        []string
+	CustomPaths     []string // Non-default paths
 	RemovedDefaults []string // Defaults that were removed (in excludes)
-	IsCustomized  bool
+	IsCustomized    bool
 }
 
 // Status returns the current sync configuration status.

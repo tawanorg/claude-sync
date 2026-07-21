@@ -330,10 +330,10 @@ func TestValidatePassphraseStrength(t *testing.T) {
 		passphrase string
 		wantErr    bool
 	}{
-		{"short", true},        // Too short (< 12)
-		{"1234567", true},      // Still too short (7 chars)
-		{"12345678", true},     // Still too short (8 chars, now requires 12)
-		{"12345678901", true},  // Still too short (11 chars)
+		{"short", true},         // Too short (< 12)
+		{"1234567", true},       // Still too short (7 chars)
+		{"12345678", true},      // Still too short (8 chars, now requires 12)
+		{"12345678901", true},   // Still too short (11 chars)
 		{"123456789012", false}, // Minimum length (12)
 		{"longenoughpass", false},
 		{"very-long-passphrase-that-is-secure", false},

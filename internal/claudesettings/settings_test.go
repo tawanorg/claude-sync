@@ -12,10 +12,10 @@ import (
 
 // MockRepository implements SettingsRepository for testing.
 type MockRepository struct {
-	data      map[string][]byte
-	readErr   error
-	writeErr  error
-	mkdirErr  error
+	data       map[string][]byte
+	readErr    error
+	writeErr   error
+	mkdirErr   error
 	writeCalls []writeCall
 }
 
