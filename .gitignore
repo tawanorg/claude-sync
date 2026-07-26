@@ -3,6 +3,12 @@ bin/claude-sync
 bin/claude-sync.exe
 bin/claude-sync-*
 
+# Root-level build output. `make build` targets ./bin, but a plain
+# `go build -o claude-sync ./cmd/claude-sync` drops a ~55MB binary here,
+# which a `git add -A` would commit into history permanently.
+/claude-sync
+/claude-sync.exe
+
 # Platform package binaries (added during publish, not committed)
 npm/*/claude-sync
 npm/*/claude-sync.exe
