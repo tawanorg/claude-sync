@@ -374,6 +374,21 @@ func TestPluginStateWindowsToUnix(t *testing.T) {
 	}
 }
 
+func TestNormalizeJSONLeavesUnrelatedBytes(t *testing.T) {
+	m := mustMapper(t, "/Users/alice", nil)
+	in := []byte(`{"url":"https://x.test/r?a=1&b=2","note":"a < b && c","port":49152}`)
+
+	normalized := m.NormalizeFile(marketplacesPath, in)
+
+	// HTML metacharacters and integers must survive verbatim: only path
+	// prefixes are translated, and nothing here begins with a mapped path.
+	for _, want := range []string{`"https://x.test/r?a=1&b=2"`, `"a < b && c"`, `"port": 49152`} {
+		if !bytes.Contains(normalized, []byte(want)) {
+			t.Errorf("normalize altered unrelated content, missing %s:\n%s", want, normalized)
+		}
+	}
+}
+
 func TestJSONPathBoundaries(t *testing.T) {
 	m := mustMapper(t, "/Users/merv", nil)
 

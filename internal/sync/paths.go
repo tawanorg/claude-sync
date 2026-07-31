@@ -293,7 +293,9 @@ func replaceSeps(p string, sep byte) string {
 // path stays valid; content that is not valid JSON is returned unchanged.
 func mapJSONPaths(data []byte, from, to string) []byte {
 	var doc any
-	if err := json.Unmarshal(data, &doc); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&doc); err != nil {
 		return data
 	}
 
@@ -327,9 +329,12 @@ func mapJSONPaths(data []byte, from, to string) []byte {
 		return v
 	}
 
-	out, err := json.MarshalIndent(walk(doc), "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(walk(doc)); err != nil {
 		return data
 	}
-	return append(out, '\n')
+	return buf.Bytes()
 }
