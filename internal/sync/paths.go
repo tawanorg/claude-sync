@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"path"
 	"regexp"
@@ -193,14 +194,126 @@ func (m *PathMapper) ResolveContent(data []byte) []byte {
 	return data
 }
 
+// portableStatePaths are files outside projects/ that embed absolute paths.
+var portableStatePaths = map[string]bool{
+	"history.jsonl":                   true,
+	"plugins/known_marketplaces.json": true,
+	"plugins/installed_plugins.json":  true,
+}
+
+// basePath is the path translation rules apply to: a conflict copy follows
+// the file it was made from, so its content is resolved for this device and
+// stays comparable against the local version.
+func basePath(relPath string) string {
+	base, _, _ := SplitConflictPath(relPath)
+	return path.Clean(base)
+}
+
+// IsPortableJSONPath reports whether this path is translated as JSON rather
+// than raw bytes. A Windows path is escaped in the file ("C:\\Users\\bob"), so
+// byte replacement would eat an escape and leave the document invalid.
+func IsPortableJSONPath(relPath string) bool {
+	relPath = basePath(relPath)
+	return portableStatePaths[relPath] && path.Ext(relPath) == ".json"
+}
+
+func isPathSep(c byte) bool { return c == '/' || c == '\\' }
+
+// pathSep reports the separator p is written with, so a translated path keeps
+// the target's convention rather than the running platform's.
+func pathSep(p string) byte {
+	if strings.Contains(p, `\`) {
+		return '\\'
+	}
+	return '/'
+}
+
+func replaceSeps(p string, sep byte) string {
+	return strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' {
+			return rune(sep)
+		}
+		return r
+	}, p)
+}
+
+// mapJSONStrings applies fn to every string value, leaving escaping to the
+// encoder. Content that is not valid JSON is returned unchanged.
+func mapJSONStrings(data []byte, fn func(string) string) []byte {
+	var doc any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return data
+	}
+
+	var walk func(any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case string:
+			return fn(t)
+		case []any:
+			for i, e := range t {
+				t[i] = walk(e)
+			}
+			return t
+		case map[string]any:
+			for k, e := range t {
+				t[k] = walk(e)
+			}
+			return t
+		}
+		return v
+	}
+
+	out, err := json.MarshalIndent(walk(doc), "", "  ")
+	if err != nil {
+		return data
+	}
+	return append(out, '\n')
+}
+
+// mapJSONPaths rewrites every JSON string value that starts with a mapping's
+// from prefix, swapping it for to and re-separating the remainder.
+func (m *PathMapper) mapJSONPaths(data []byte, from, to func(pathMapping) string) []byte {
+	if m == nil {
+		return data
+	}
+	return mapJSONStrings(data, func(s string) string {
+		for _, mp := range m.mappings {
+			prefix := from(mp)
+			if !strings.HasPrefix(s, prefix) {
+				continue
+			}
+			rest := s[len(prefix):]
+			if rest != "" && !isPathSep(rest[0]) {
+				continue
+			}
+			return to(mp) + replaceSeps(rest, pathSep(to(mp)))
+		}
+		return s
+	})
+}
+
+// NormalizeJSONContent is NormalizeContent for JSON string values.
+func (m *PathMapper) NormalizeJSONContent(data []byte) []byte {
+	return m.mapJSONPaths(data,
+		func(mp pathMapping) string { return mp.localPath },
+		func(mp pathMapping) string { return pathToken(mp.name) })
+}
+
+// ResolveJSONContent is ResolveContent for JSON string values.
+func (m *PathMapper) ResolveJSONContent(data []byte) []byte {
+	return m.mapJSONPaths(data,
+		func(mp pathMapping) string { return pathToken(mp.name) },
+		func(mp pathMapping) string { return mp.localPath })
+}
+
 // IsPortableContentPath reports whether content path translation applies to
-// this relative path: text formats under projects/ plus the prompt history.
+// this relative path: text formats under projects/, the prompt history, and
+// the plugin state files.
 // Conflict copies (path.conflict.<timestamp>) inherit the base path's rule.
 func IsPortableContentPath(relPath string) bool {
-	if i := strings.Index(relPath, ".conflict."); i >= 0 {
-		relPath = relPath[:i]
-	}
-	if relPath == "history.jsonl" {
+	relPath = basePath(relPath)
+	if portableStatePaths[relPath] {
 		return true
 	}
 	if !strings.HasPrefix(relPath, "projects/") {

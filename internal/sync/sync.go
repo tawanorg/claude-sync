@@ -431,7 +431,9 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 	}
 
 	// Replace machine-specific paths with portable tokens in session content
-	if IsPortableContentPath(relativePath) {
+	if IsPortableJSONPath(relativePath) {
+		data = s.paths.NormalizeJSONContent(data)
+	} else if IsPortableContentPath(relativePath) {
 		data = s.paths.NormalizeContent(data)
 	}
 
@@ -486,7 +488,9 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	}
 
 	// Replace portable tokens with this device's paths in session content
-	if IsPortableContentPath(relativePath) {
+	if IsPortableJSONPath(relativePath) {
+		data = s.paths.ResolveJSONContent(data)
+	} else if IsPortableContentPath(relativePath) {
 		data = s.paths.ResolveContent(data)
 	}
 
@@ -524,11 +528,30 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	return nil
 }
 
+// conflictMarker separates a path from the timestamp of the remote copy saved
+// beside it when both sides changed.
+const conflictMarker = ".conflict."
+
+// ConflictPath names the copy that holds the remote version of relPath.
+func ConflictPath(relPath string, at time.Time) string {
+	return relPath + conflictMarker + at.Format("20060102-150405")
+}
+
+// SplitConflictPath returns the path a conflict copy was made from and its
+// timestamp. ok is false when p is not a conflict copy.
+func SplitConflictPath(p string) (base, timestamp string, ok bool) {
+	i := strings.Index(p, conflictMarker)
+	if i < 0 {
+		return p, "", false
+	}
+	return p[:i], p[i+len(conflictMarker):], true
+}
+
 func (s *Syncer) handleConflict(ctx context.Context, relativePath string, remoteObj storage.ObjectInfo) error {
 	s.log("Conflict detected: %s (keeping local, saving remote as .conflict)", relativePath)
 
 	// Download remote version with conflict suffix
-	conflictPath := relativePath + ".conflict." + time.Now().Format("20060102-150405")
+	conflictPath := ConflictPath(relativePath, time.Now())
 	if err := s.downloadFile(ctx, conflictPath, remoteObj.Key, nil); err != nil {
 		return fmt.Errorf("failed to save conflict file: %w", err)
 	}

@@ -1501,18 +1501,12 @@ func findConflicts(claudeDir string) ([]conflictFile, error) {
 			return nil
 		}
 
-		// Look for .conflict. pattern
-		if strings.Contains(filepath.Base(path), ".conflict.") {
-			// Extract original path and timestamp
-			// Format: filename.ext.conflict.20260208-095132
-			parts := strings.Split(path, ".conflict.")
-			if len(parts) == 2 {
-				conflicts = append(conflicts, conflictFile{
-					ConflictPath: path,
-					OriginalPath: parts[0],
-					Timestamp:    parts[1],
-				})
-			}
+		if original, timestamp, ok := sync.SplitConflictPath(path); ok {
+			conflicts = append(conflicts, conflictFile{
+				ConflictPath: path,
+				OriginalPath: original,
+				Timestamp:    timestamp,
+			})
 		}
 		return nil
 	})

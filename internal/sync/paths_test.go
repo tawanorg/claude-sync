@@ -1,10 +1,14 @@
 package sync
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func mustMapper(t *testing.T, home string, userMap map[string]string) *PathMapper {
@@ -163,6 +167,10 @@ func TestIsPortableContentPath(t *testing.T) {
 		"projects/-Users-a-x/img.png":                             false,
 		"settings.json":                                           false,
 		"agents/foo.md":                                           false,
+		"plugins/known_marketplaces.json":                         true,
+		"plugins/installed_plugins.json":                          true,
+		"plugins/cache/foo/plugin.json":                           false,
+		"plugins/marketplaces/foo/.git/config":                    false,
 	}
 	for in, want := range cases {
 		if got := IsPortableContentPath(in); got != want {
@@ -295,5 +303,138 @@ func TestMigratePaths(t *testing.T) {
 	}
 	if len(result2.Migrated) != 0 {
 		t.Errorf("second migrate should migrate nothing, got %v", result2.Migrated)
+	}
+}
+
+func TestPluginStateJSONRoundTrip(t *testing.T) {
+	mac := mustMapper(t, "/Users/alice", nil)
+	local := []byte(`{"m":{"installLocation":"/Users/alice/.claude/plugins/marketplaces/x"}}`)
+
+	normalized := mac.NormalizeJSONContent(local)
+	if !bytes.Contains(normalized, []byte("${HOME}/.claude/plugins/marketplaces/x")) {
+		t.Fatalf("normalize did not tokenize home: %s", normalized)
+	}
+
+	back := mac.ResolveJSONContent(normalized)
+	var got map[string]map[string]string
+	if err := json.Unmarshal(back, &got); err != nil {
+		t.Fatalf("resolved content is not valid JSON: %v (%s)", err, back)
+	}
+	want := "/Users/alice/.claude/plugins/marketplaces/x"
+	if got["m"]["installLocation"] != want {
+		t.Errorf("round trip = %q, want %q", got["m"]["installLocation"], want)
+	}
+}
+
+func TestNormalizeJSONPreservesEscaping(t *testing.T) {
+	win := mustMapper(t, `C:\Users\bob`, nil)
+	local, err := json.Marshal(map[string]string{
+		"installPath": `C:\Users\bob\.claude\plugins\cache\p`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	normalized := win.NormalizeJSONContent(local)
+
+	var got map[string]string
+	if err := json.Unmarshal(normalized, &got); err != nil {
+		t.Fatalf("normalized content is not valid JSON: %v (%s)", err, normalized)
+	}
+	// The token form is separator-neutral; resolve applies the target's.
+	if want := "${HOME}/.claude/plugins/cache/p"; got["installPath"] != want {
+		t.Errorf("normalized = %q, want %q", got["installPath"], want)
+	}
+}
+
+func TestPluginStateWindowsToUnix(t *testing.T) {
+	win := mustMapper(t, `C:\Users\bob`, nil)
+	mac := mustMapper(t, "/Users/alice", nil)
+
+	local, err := json.Marshal(map[string]string{
+		"installLocation": `C:\Users\bob\.claude\plugins\marketplaces\x`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	onMac := mac.ResolveJSONContent(win.NormalizeJSONContent(local))
+
+	var got map[string]string
+	if err := json.Unmarshal(onMac, &got); err != nil {
+		t.Fatalf("not valid JSON: %v (%s)", err, onMac)
+	}
+	if want := "/Users/alice/.claude/plugins/marketplaces/x"; got["installLocation"] != want {
+		t.Errorf("windows -> unix = %q, want %q", got["installLocation"], want)
+	}
+	if strings.Contains(got["installLocation"], `\`) {
+		t.Errorf("result kept windows separators: %q", got["installLocation"])
+	}
+}
+
+func TestJSONPathBoundaries(t *testing.T) {
+	m := mustMapper(t, "/Users/merv", nil)
+
+	// a longer username must not match the shorter mapped prefix
+	in, err := json.Marshal(map[string]string{"p": "/Users/mervynlally/x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(m.NormalizeJSONContent(in), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["p"] != "/Users/mervynlally/x" {
+		t.Errorf("normalized = %q, want unchanged", got["p"])
+	}
+
+	// the mapped path itself, with no remainder, still tokenizes
+	in, err = json.Marshal(map[string]string{"p": "/Users/merv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(m.NormalizeJSONContent(in), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["p"] != "${HOME}" {
+		t.Errorf("normalized = %q, want ${HOME}", got["p"])
+	}
+}
+
+func TestSplitConflictPath(t *testing.T) {
+	cases := []struct {
+		in        string
+		base      string
+		timestamp string
+		ok        bool
+	}{
+		{"plugins/known_marketplaces.json", "plugins/known_marketplaces.json", "", false},
+		{"a/sess.jsonl.conflict.20260610-120000", "a/sess.jsonl", "20260610-120000", true},
+		// a conflict copy of a conflict copy still reports the original file
+		{"a/x.json.conflict.A.conflict.B", "a/x.json", "A.conflict.B", true},
+	}
+	for _, c := range cases {
+		base, ts, ok := SplitConflictPath(c.in)
+		if base != c.base || ts != c.timestamp || ok != c.ok {
+			t.Errorf("SplitConflictPath(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				c.in, base, ts, ok, c.base, c.timestamp, c.ok)
+		}
+	}
+}
+
+func TestConflictPathRoundTrip(t *testing.T) {
+	at := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	p := ConflictPath("plugins/known_marketplaces.json", at)
+
+	base, ts, ok := SplitConflictPath(p)
+	if !ok {
+		t.Fatalf("SplitConflictPath(%q) reported no conflict", p)
+	}
+	if base != "plugins/known_marketplaces.json" || ts != "20260610-120000" {
+		t.Errorf("round trip = (%q, %q)", base, ts)
+	}
+	// the copy is translated like the file it came from
+	if !IsPortableJSONPath(p) {
+		t.Errorf("IsPortableJSONPath(%q) = false, want true", p)
 	}
 }
