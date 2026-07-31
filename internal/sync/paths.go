@@ -39,6 +39,10 @@ type pathMapping struct {
 	encLocal  string // localPath in Claude Code's directory encoding
 	normRe    *regexp.Regexp
 	normRepl  []byte // replacement template: token ($-escaped) + boundary group
+	// resolveRe captures the token and its path tail so the tail's separators
+	// can follow localPath's convention; otherwise a foreign-OS separator
+	// survives after the prefix (e.g. C:\Users\bob/foo) and cwd matching fails.
+	resolveRe *regexp.Regexp
 }
 
 var pathTokenNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -66,7 +70,8 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 			normRe:    re,
 			// "$$" = literal "$" in a regexp replacement template; without it
 			// "${HOME}" would itself be read as a group reference
-			normRepl: []byte("$${" + name + "}${1}"),
+			normRepl:  []byte("$${" + name + "}${1}"),
+			resolveRe: regexp.MustCompile(regexp.QuoteMeta(pathToken(name)) + `([/\\][^"\s]*)?`),
 		})
 		return nil
 	}
@@ -183,13 +188,19 @@ func (m *PathMapper) NormalizeContent(data []byte) []byte {
 	return data
 }
 
-// ResolveContent replaces portable tokens with this device's local paths.
+// ResolveContent replaces portable tokens with this device's local paths,
+// rewriting the following path tail's separators to localPath's convention so a
+// path authored on another OS resolves to a valid native path.
 func (m *PathMapper) ResolveContent(data []byte) []byte {
 	if m == nil {
 		return data
 	}
 	for _, mp := range m.mappings {
-		data = bytes.ReplaceAll(data, []byte(pathToken(mp.name)), []byte(mp.localPath))
+		sep := pathSep(mp.localPath)
+		data = mp.resolveRe.ReplaceAllFunc(data, func(match []byte) []byte {
+			tail := match[len(pathToken(mp.name)):]
+			return append([]byte(mp.localPath), replaceSeps(string(tail), sep)...)
+		})
 	}
 	return data
 }
@@ -212,10 +223,16 @@ func basePath(relPath string) string {
 	return path.Clean(base)
 }
 
-// isPortableJSONPath reports whether relPath is translated as JSON rather than
-// raw bytes.
+// isPortableJSONPath reports whether relPath is translated as a single JSON
+// document rather than raw bytes.
 func isPortableJSONPath(relPath string) bool {
-	return portableStatePaths[relPath] && path.Ext(relPath) == ".json"
+	return path.Ext(relPath) == ".json"
+}
+
+// isPortableJSONLPath reports whether relPath is JSON-lines, translated one
+// JSON document per line.
+func isPortableJSONLPath(relPath string) bool {
+	return path.Ext(relPath) == ".jsonl"
 }
 
 // IsPortableContentPath reports whether content path translation applies to
@@ -238,34 +255,63 @@ func IsPortableContentPath(relPath string) bool {
 }
 
 // NormalizeFile replaces this device's mapped path prefixes with portable
-// tokens in the content of relPath, using JSON-aware translation for the
-// plugin state files and boundary-aware byte replacement otherwise.
+// tokens in the content of relPath. JSON and JSON-lines files are translated
+// through a JSON decode/encode so an inserted path stays correctly escaped and
+// re-separated; other text is translated with boundary-aware byte replacement.
 func (m *PathMapper) NormalizeFile(relPath string, data []byte) []byte {
-	if m == nil {
-		return data
-	}
-	if isPortableJSONPath(basePath(relPath)) {
-		for _, mp := range m.mappings {
-			data = mapJSONPaths(data, mp.localPath, pathToken(mp.name))
-		}
-		return data
-	}
-	return m.NormalizeContent(data)
+	return m.mapFile(relPath, data, false)
 }
 
 // ResolveFile replaces portable tokens with this device's local paths in the
 // content of relPath, mirroring NormalizeFile.
 func (m *PathMapper) ResolveFile(relPath string, data []byte) []byte {
+	return m.mapFile(relPath, data, true)
+}
+
+func (m *PathMapper) mapFile(relPath string, data []byte, resolve bool) []byte {
 	if m == nil {
 		return data
 	}
-	if isPortableJSONPath(basePath(relPath)) {
-		for _, mp := range m.mappings {
-			data = mapJSONPaths(data, pathToken(mp.name), mp.localPath)
-		}
-		return data
+	base := basePath(relPath)
+	switch {
+	case isPortableJSONPath(base):
+		return m.mapJSON(data, resolve, true)
+	case isPortableJSONLPath(base):
+		return m.mapJSONL(data, resolve)
+	case resolve:
+		return m.ResolveContent(data)
+	default:
+		return m.NormalizeContent(data)
 	}
-	return m.ResolveContent(data)
+}
+
+// mapJSON translates every mapping in a single JSON document. resolve picks the
+// direction: false normalizes local paths to tokens, true resolves tokens back.
+func (m *PathMapper) mapJSON(data []byte, resolve, indent bool) []byte {
+	for _, mp := range m.mappings {
+		from, to := mp.localPath, pathToken(mp.name)
+		if resolve {
+			from, to = to, from
+		}
+		data = mapJSONPaths(data, from, to, indent)
+	}
+	return data
+}
+
+// mapJSONL translates a JSON-lines file one document per line, preserving line
+// endings. Lines that are not valid JSON pass through unchanged.
+func (m *PathMapper) mapJSONL(data []byte, resolve bool) []byte {
+	lines := bytes.Split(data, []byte("\n"))
+	for i, line := range lines {
+		trimmed := bytes.TrimRight(line, "\r")
+		if len(bytes.TrimSpace(trimmed)) == 0 {
+			continue
+		}
+		mapped := m.mapJSON(trimmed, resolve, false)
+		mapped = append(mapped, line[len(trimmed):]...)
+		lines[i] = mapped
+	}
+	return bytes.Join(lines, []byte("\n"))
 }
 
 // pathSep reports the separator p is written with, so a translated path keeps
@@ -291,7 +337,9 @@ func replaceSeps(p string, sep byte) string {
 // begins with from, swapping that prefix for to and re-separating the
 // remainder in to's convention. Escaping is left to the encoder, so a Windows
 // path stays valid; content that is not valid JSON is returned unchanged.
-func mapJSONPaths(data []byte, from, to string) []byte {
+// Indented output re-indents state files for readability; JSON-lines callers
+// pass indent=false to keep each document on a single line.
+func mapJSONPaths(data []byte, from, to string, indent bool) []byte {
 	var doc any
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -332,9 +380,17 @@ func mapJSONPaths(data []byte, from, to string) []byte {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
+	if indent {
+		enc.SetIndent("", "  ")
+	}
 	if err := enc.Encode(walk(doc)); err != nil {
 		return data
 	}
-	return buf.Bytes()
+	out := buf.Bytes()
+	if !indent {
+		// A JSON-lines document is one line; Encode always appends a newline the
+		// caller rejoins itself. State files keep the newline they had.
+		out = bytes.TrimSuffix(out, []byte("\n"))
+	}
+	return out
 }

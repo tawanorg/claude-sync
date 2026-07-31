@@ -131,6 +131,72 @@ func TestContentRoundTrip(t *testing.T) {
 	}
 }
 
+func TestResolveContentCrossOSSeparators(t *testing.T) {
+	win := mustMapper(t, `C:\Users\bob`, nil)
+
+	got := string(win.ResolveContent([]byte(`{"cwd":"${HOME}/Developer/TypeScript/hivemind","bare":"${HOME}"}`)))
+	want := `{"cwd":"C:\Users\bob\Developer\TypeScript\hivemind","bare":"C:\Users\bob"}`
+	if got != want {
+		t.Fatalf("ResolveContent cross-OS = %s, want %s", got, want)
+	}
+
+	mac := mustMapper(t, "/Users/bob", nil)
+	got = string(mac.ResolveContent([]byte(`{"cwd":"${HOME}\Developer\hivemind"}`)))
+	want = `{"cwd":"/Users/bob/Developer/hivemind"}`
+	if got != want {
+		t.Fatalf("ResolveContent win->posix = %s, want %s", got, want)
+	}
+}
+
+func TestResolveFileJSONLEscaping(t *testing.T) {
+	win := mustMapper(t, `C:\Users\bob`, nil)
+
+	line := []byte(`{"type":"user","cwd":"${HOME}/Developer/hivemind","home":"${HOME}"}`)
+	got := win.ResolveFile("projects/-x/sess.jsonl", line)
+
+	var doc map[string]any
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("resolved JSONL line is not valid JSON: %v\n%s", err, got)
+	}
+	if doc["cwd"] != `C:\Users\bob\Developer\hivemind` {
+		t.Fatalf("cwd = %q, want native Windows path", doc["cwd"])
+	}
+	if doc["home"] != `C:\Users\bob` {
+		t.Fatalf("home = %q", doc["home"])
+	}
+
+	// Round trip: normalizing the resolved line on macOS returns the token form.
+	mac := mustMapper(t, "/Users/bob", nil)
+	back := mac.NormalizeFile("projects/-x/sess.jsonl", mac.ResolveFile("projects/-x/sess.jsonl", line))
+	var backDoc map[string]any
+	if err := json.Unmarshal(back, &backDoc); err != nil {
+		t.Fatalf("round-tripped line invalid: %v", err)
+	}
+	if backDoc["cwd"] != "${HOME}/Developer/hivemind" {
+		t.Fatalf("round-trip cwd = %q, want token form", backDoc["cwd"])
+	}
+}
+
+func TestMapJSONLPreservesLines(t *testing.T) {
+	win := mustMapper(t, `C:\Users\bob`, nil)
+
+	in := []byte("{\"cwd\":\"${HOME}/a\"}\n{\"cwd\":\"${HOME}/b\"}\n")
+	got := win.ResolveFile("projects/-x/sess.jsonl", in)
+
+	lines := bytes.Split(bytes.TrimRight(got, "\n"), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %q", len(lines), got)
+	}
+	for _, l := range lines {
+		if !json.Valid(l) {
+			t.Fatalf("line not valid JSON: %s", l)
+		}
+	}
+	if !bytes.HasSuffix(got, []byte("\n")) {
+		t.Fatal("trailing newline not preserved")
+	}
+}
+
 func TestContentBoundaries(t *testing.T) {
 	m := mustMapper(t, "/Users/merv", nil)
 
