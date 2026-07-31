@@ -195,13 +195,16 @@ func (m *PathMapper) ResolveContent(data []byte) []byte {
 }
 
 // portableStatePaths are files outside projects/ that embed absolute paths.
+// A JSON file is translated by decoding it and rewriting string values: a
+// Windows path is escaped in the source ("C:\\Users\\bob"), so raw byte
+// replacement would eat an escape and leave the document invalid.
 var portableStatePaths = map[string]bool{
 	"history.jsonl":                   true,
 	"plugins/known_marketplaces.json": true,
 	"plugins/installed_plugins.json":  true,
 }
 
-// basePath is the path translation rules apply to: a conflict copy follows
+// basePath is the path a translation rule applies to: a conflict copy follows
 // the file it was made from, so its content is resolved for this device and
 // stays comparable against the local version.
 func basePath(relPath string) string {
@@ -209,102 +212,10 @@ func basePath(relPath string) string {
 	return path.Clean(base)
 }
 
-// IsPortableJSONPath reports whether this path is translated as JSON rather
-// than raw bytes. A Windows path is escaped in the file ("C:\\Users\\bob"), so
-// byte replacement would eat an escape and leave the document invalid.
-func IsPortableJSONPath(relPath string) bool {
-	relPath = basePath(relPath)
+// isPortableJSONPath reports whether relPath is translated as JSON rather than
+// raw bytes.
+func isPortableJSONPath(relPath string) bool {
 	return portableStatePaths[relPath] && path.Ext(relPath) == ".json"
-}
-
-func isPathSep(c byte) bool { return c == '/' || c == '\\' }
-
-// pathSep reports the separator p is written with, so a translated path keeps
-// the target's convention rather than the running platform's.
-func pathSep(p string) byte {
-	if strings.Contains(p, `\`) {
-		return '\\'
-	}
-	return '/'
-}
-
-func replaceSeps(p string, sep byte) string {
-	return strings.Map(func(r rune) rune {
-		if r == '/' || r == '\\' {
-			return rune(sep)
-		}
-		return r
-	}, p)
-}
-
-// mapJSONStrings applies fn to every string value, leaving escaping to the
-// encoder. Content that is not valid JSON is returned unchanged.
-func mapJSONStrings(data []byte, fn func(string) string) []byte {
-	var doc any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return data
-	}
-
-	var walk func(any) any
-	walk = func(v any) any {
-		switch t := v.(type) {
-		case string:
-			return fn(t)
-		case []any:
-			for i, e := range t {
-				t[i] = walk(e)
-			}
-			return t
-		case map[string]any:
-			for k, e := range t {
-				t[k] = walk(e)
-			}
-			return t
-		}
-		return v
-	}
-
-	out, err := json.MarshalIndent(walk(doc), "", "  ")
-	if err != nil {
-		return data
-	}
-	return append(out, '\n')
-}
-
-// mapJSONPaths rewrites every JSON string value that starts with a mapping's
-// from prefix, swapping it for to and re-separating the remainder.
-func (m *PathMapper) mapJSONPaths(data []byte, from, to func(pathMapping) string) []byte {
-	if m == nil {
-		return data
-	}
-	return mapJSONStrings(data, func(s string) string {
-		for _, mp := range m.mappings {
-			prefix := from(mp)
-			if !strings.HasPrefix(s, prefix) {
-				continue
-			}
-			rest := s[len(prefix):]
-			if rest != "" && !isPathSep(rest[0]) {
-				continue
-			}
-			return to(mp) + replaceSeps(rest, pathSep(to(mp)))
-		}
-		return s
-	})
-}
-
-// NormalizeJSONContent is NormalizeContent for JSON string values.
-func (m *PathMapper) NormalizeJSONContent(data []byte) []byte {
-	return m.mapJSONPaths(data,
-		func(mp pathMapping) string { return mp.localPath },
-		func(mp pathMapping) string { return pathToken(mp.name) })
-}
-
-// ResolveJSONContent is ResolveContent for JSON string values.
-func (m *PathMapper) ResolveJSONContent(data []byte) []byte {
-	return m.mapJSONPaths(data,
-		func(mp pathMapping) string { return pathToken(mp.name) },
-		func(mp pathMapping) string { return mp.localPath })
 }
 
 // IsPortableContentPath reports whether content path translation applies to
@@ -324,4 +235,101 @@ func IsPortableContentPath(relPath string) bool {
 		return true
 	}
 	return false
+}
+
+// NormalizeFile replaces this device's mapped path prefixes with portable
+// tokens in the content of relPath, using JSON-aware translation for the
+// plugin state files and boundary-aware byte replacement otherwise.
+func (m *PathMapper) NormalizeFile(relPath string, data []byte) []byte {
+	if m == nil {
+		return data
+	}
+	if isPortableJSONPath(basePath(relPath)) {
+		for _, mp := range m.mappings {
+			data = mapJSONPaths(data, mp.localPath, pathToken(mp.name))
+		}
+		return data
+	}
+	return m.NormalizeContent(data)
+}
+
+// ResolveFile replaces portable tokens with this device's local paths in the
+// content of relPath, mirroring NormalizeFile.
+func (m *PathMapper) ResolveFile(relPath string, data []byte) []byte {
+	if m == nil {
+		return data
+	}
+	if isPortableJSONPath(basePath(relPath)) {
+		for _, mp := range m.mappings {
+			data = mapJSONPaths(data, pathToken(mp.name), mp.localPath)
+		}
+		return data
+	}
+	return m.ResolveContent(data)
+}
+
+// pathSep reports the separator p is written with, so a translated path keeps
+// the target's convention rather than the running platform's.
+func pathSep(p string) byte {
+	if strings.Contains(p, `\`) {
+		return '\\'
+	}
+	return '/'
+}
+
+// replaceSeps rewrites every separator in p to sep.
+func replaceSeps(p string, sep byte) string {
+	return strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' {
+			return rune(sep)
+		}
+		return r
+	}, p)
+}
+
+// mapJSONPaths decodes data as JSON and rewrites every string value that
+// begins with from, swapping that prefix for to and re-separating the
+// remainder in to's convention. Escaping is left to the encoder, so a Windows
+// path stays valid; content that is not valid JSON is returned unchanged.
+func mapJSONPaths(data []byte, from, to string) []byte {
+	var doc any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return data
+	}
+
+	mapPath := func(s string) string {
+		if !strings.HasPrefix(s, from) {
+			return s
+		}
+		rest := s[len(from):]
+		if rest != "" && rest[0] != '/' && rest[0] != '\\' {
+			return s
+		}
+		return to + replaceSeps(rest, pathSep(to))
+	}
+
+	var walk func(any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case string:
+			return mapPath(t)
+		case []any:
+			for i, e := range t {
+				t[i] = walk(e)
+			}
+			return t
+		case map[string]any:
+			for k, e := range t {
+				t[k] = walk(e)
+			}
+			return t
+		}
+		return v
+	}
+
+	out, err := json.MarshalIndent(walk(doc), "", "  ")
+	if err != nil {
+		return data
+	}
+	return append(out, '\n')
 }

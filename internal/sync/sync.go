@@ -431,10 +431,8 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 	}
 
 	// Replace machine-specific paths with portable tokens in session content
-	if IsPortableJSONPath(relativePath) {
-		data = s.paths.NormalizeJSONContent(data)
-	} else if IsPortableContentPath(relativePath) {
-		data = s.paths.NormalizeContent(data)
+	if IsPortableContentPath(relativePath) {
+		data = s.paths.NormalizeFile(relativePath, data)
 	}
 
 	// Compress
@@ -488,10 +486,8 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	}
 
 	// Replace portable tokens with this device's paths in session content
-	if IsPortableJSONPath(relativePath) {
-		data = s.paths.ResolveJSONContent(data)
-	} else if IsPortableContentPath(relativePath) {
-		data = s.paths.ResolveContent(data)
+	if IsPortableContentPath(relativePath) {
+		data = s.paths.ResolveFile(relativePath, data)
 	}
 
 	// Guard against path traversal from crafted remote keys
@@ -538,12 +534,16 @@ func ConflictPath(relPath string, at time.Time) string {
 }
 
 // SplitConflictPath returns the path a conflict copy was made from and its
-// timestamp. ok is false when p is not a conflict copy.
+// timestamp. ok is false when p is not a conflict copy. The marker is only
+// honored in the final segment, so a parent directory that happens to contain
+// ".conflict." never triggers a false match.
 func SplitConflictPath(p string) (base, timestamp string, ok bool) {
-	i := strings.Index(p, conflictMarker)
+	seg := strings.LastIndexAny(p, `/\`) + 1
+	i := strings.Index(p[seg:], conflictMarker)
 	if i < 0 {
 		return p, "", false
 	}
+	i += seg
 	return p[:i], p[i+len(conflictMarker):], true
 }
 

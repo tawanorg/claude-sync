@@ -306,16 +306,18 @@ func TestMigratePaths(t *testing.T) {
 	}
 }
 
+const marketplacesPath = "plugins/known_marketplaces.json"
+
 func TestPluginStateJSONRoundTrip(t *testing.T) {
 	mac := mustMapper(t, "/Users/alice", nil)
 	local := []byte(`{"m":{"installLocation":"/Users/alice/.claude/plugins/marketplaces/x"}}`)
 
-	normalized := mac.NormalizeJSONContent(local)
+	normalized := mac.NormalizeFile(marketplacesPath, local)
 	if !bytes.Contains(normalized, []byte("${HOME}/.claude/plugins/marketplaces/x")) {
 		t.Fatalf("normalize did not tokenize home: %s", normalized)
 	}
 
-	back := mac.ResolveJSONContent(normalized)
+	back := mac.ResolveFile(marketplacesPath, normalized)
 	var got map[string]map[string]string
 	if err := json.Unmarshal(back, &got); err != nil {
 		t.Fatalf("resolved content is not valid JSON: %v (%s)", err, back)
@@ -335,7 +337,7 @@ func TestNormalizeJSONPreservesEscaping(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	normalized := win.NormalizeJSONContent(local)
+	normalized := win.NormalizeFile(marketplacesPath, local)
 
 	var got map[string]string
 	if err := json.Unmarshal(normalized, &got); err != nil {
@@ -358,7 +360,7 @@ func TestPluginStateWindowsToUnix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	onMac := mac.ResolveJSONContent(win.NormalizeJSONContent(local))
+	onMac := mac.ResolveFile(marketplacesPath, win.NormalizeFile(marketplacesPath, local))
 
 	var got map[string]string
 	if err := json.Unmarshal(onMac, &got); err != nil {
@@ -381,7 +383,7 @@ func TestJSONPathBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got map[string]string
-	if err := json.Unmarshal(m.NormalizeJSONContent(in), &got); err != nil {
+	if err := json.Unmarshal(m.NormalizeFile(marketplacesPath, in), &got); err != nil {
 		t.Fatal(err)
 	}
 	if got["p"] != "/Users/mervynlally/x" {
@@ -393,7 +395,7 @@ func TestJSONPathBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(m.NormalizeJSONContent(in), &got); err != nil {
+	if err := json.Unmarshal(m.NormalizeFile(marketplacesPath, in), &got); err != nil {
 		t.Fatal(err)
 	}
 	if got["p"] != "${HOME}" {
@@ -412,6 +414,9 @@ func TestSplitConflictPath(t *testing.T) {
 		{"a/sess.jsonl.conflict.20260610-120000", "a/sess.jsonl", "20260610-120000", true},
 		// a conflict copy of a conflict copy still reports the original file
 		{"a/x.json.conflict.A.conflict.B", "a/x.json", "A.conflict.B", true},
+		// a parent directory containing the marker is not a conflict copy
+		{"a.conflict.b/sess.jsonl", "a.conflict.b/sess.jsonl", "", false},
+		{`a.conflict.b\sess.jsonl`, `a.conflict.b\sess.jsonl`, "", false},
 	}
 	for _, c := range cases {
 		base, ts, ok := SplitConflictPath(c.in)
@@ -433,8 +438,19 @@ func TestConflictPathRoundTrip(t *testing.T) {
 	if base != "plugins/known_marketplaces.json" || ts != "20260610-120000" {
 		t.Errorf("round trip = (%q, %q)", base, ts)
 	}
-	// the copy is translated like the file it came from
-	if !IsPortableJSONPath(p) {
-		t.Errorf("IsPortableJSONPath(%q) = false, want true", p)
+
+	// the copy is translated as JSON, like the file it came from: raw byte
+	// replacement would leave the escaped Windows path invalid.
+	win := mustMapper(t, `C:\Users\bob`, nil)
+	local, err := json.Marshal(map[string]string{"installLocation": `C:\Users\bob\x`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(win.NormalizeFile(p, local), &got); err != nil {
+		t.Fatalf("conflict copy not valid JSON: %v", err)
+	}
+	if got["installLocation"] != "${HOME}/x" {
+		t.Errorf("conflict copy not translated: %q", got["installLocation"])
 	}
 }
