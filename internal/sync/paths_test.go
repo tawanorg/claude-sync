@@ -212,6 +212,139 @@ func TestContentBoundaries(t *testing.T) {
 	}
 }
 
+// mustSymlinkedHome creates a realPath directory and a symlink pointing at it,
+// returning both paths. It skips the test when this OS/user cannot create
+// symlinks (unprivileged Windows without developer mode).
+func mustSymlinkedHome(t *testing.T) (link, realPath string) {
+	t.Helper()
+	tmp := t.TempDir()
+	realPath = filepath.Join(tmp, "Projects")
+	if err := os.MkdirAll(realPath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link = filepath.Join(tmp, "Developer")
+	if err := os.Symlink(realPath, link); err != nil {
+		t.Skipf("cannot create symlinks on this system: %v", err)
+	}
+	// EvalSymlinks also canonicalizes the parent chain (e.g. macOS /var ->
+	// /private/var), so compare against the same canonical form the mapper uses.
+	resolved, err := filepath.EvalSymlinks(realPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return link, resolved
+}
+
+func TestSymlinkedHomeNormalizesToRealPath(t *testing.T) {
+	link, realPath := mustSymlinkedHome(t)
+	m := mustMapper(t, link, nil)
+
+	// A cwd recorded through the symlink and the same cwd recorded through the
+	// realPath path must produce the same token.
+	viaLink := m.NormalizeFile("projects/-x/sess.jsonl", []byte(`{"cwd":`+mustJSONString(t, filepath.Join(link, "app"))+`}`))
+	viaReal := m.NormalizeFile("projects/-x/sess.jsonl", []byte(`{"cwd":`+mustJSONString(t, filepath.Join(realPath, "app"))+`}`))
+
+	for _, got := range [][]byte{viaLink, viaReal} {
+		var doc map[string]string
+		if err := json.Unmarshal(got, &doc); err != nil {
+			t.Fatalf("normalized line invalid: %v (%s)", err, got)
+		}
+		if want := "${HOME}/app"; doc["cwd"] != want {
+			t.Errorf("cwd = %q, want %q", doc["cwd"], want)
+		}
+	}
+
+	// Raw (non-JSON) content takes the same route.
+	if got := string(m.NormalizeContent([]byte(filepath.Join(link, "app") + " "))); got != "${HOME}"+string(filepath.Separator)+"app " {
+		t.Errorf("NormalizeContent via symlink = %q", got)
+	}
+}
+
+func TestSymlinkedHomeResolvesToRealPath(t *testing.T) {
+	link, realPath := mustSymlinkedHome(t)
+	m := mustMapper(t, link, nil)
+
+	got := m.ResolveFile("projects/-x/sess.jsonl", []byte(`{"cwd":"${HOME}/app"}`))
+	var doc map[string]string
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("resolved line invalid: %v (%s)", err, got)
+	}
+	want := filepath.Join(realPath, "app")
+	if doc["cwd"] != want {
+		t.Errorf("cwd = %q, want realPath path %q", doc["cwd"], want)
+	}
+	if strings.HasPrefix(doc["cwd"], link) {
+		t.Errorf("cwd kept the symlink prefix: %q", doc["cwd"])
+	}
+}
+
+func TestSymlinkedHomeRelPathBothEncodings(t *testing.T) {
+	link, realPath := mustSymlinkedHome(t)
+	m := mustMapper(t, link, nil)
+
+	viaLink := "projects/" + EncodeClaudePath(link) + "-app/sess.jsonl"
+	viaReal := "projects/" + EncodeClaudePath(realPath) + "-app/sess.jsonl"
+	want := "projects/${HOME}-app/sess.jsonl"
+
+	for _, in := range []string{viaLink, viaReal} {
+		if got := m.NormalizeRelPath(in); got != want {
+			t.Errorf("NormalizeRelPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	// Pull writes under the realPath path, where `claude --resume` looks.
+	got, ok := m.ResolveRelPath(want)
+	if !ok {
+		t.Fatalf("ResolveRelPath(%q) unresolvable", want)
+	}
+	if got != viaReal {
+		t.Errorf("ResolveRelPath(%q) = %q, want %q", want, got, viaReal)
+	}
+}
+
+func TestSymlinkedPathMapEntry(t *testing.T) {
+	link, realPath := mustSymlinkedHome(t)
+	m := mustMapper(t, filepath.Join(t.TempDir(), "home"), map[string]string{link: "WORK"})
+
+	in := "projects/" + EncodeClaudePath(link) + "-api/sess.jsonl"
+	want := "projects/${WORK}-api/sess.jsonl"
+	if got := m.NormalizeRelPath(in); got != want {
+		t.Errorf("NormalizeRelPath(%q) = %q, want %q", in, got, want)
+	}
+
+	got, ok := m.ResolveRelPath(want)
+	if !ok {
+		t.Fatalf("ResolveRelPath(%q) unresolvable", want)
+	}
+	if wantReal := "projects/" + EncodeClaudePath(realPath) + "-api/sess.jsonl"; got != wantReal {
+		t.Errorf("ResolveRelPath(%q) = %q, want %q", want, got, wantReal)
+	}
+}
+
+func TestMissingDirectoryKeepsLiteralPath(t *testing.T) {
+	// A prefix that does not exist on this device must still map, unchanged.
+	absent := filepath.Join(t.TempDir(), "no-such-dir")
+	m := mustMapper(t, absent, nil)
+
+	in := "projects/" + EncodeClaudePath(absent) + "-app/sess.jsonl"
+	if got := m.NormalizeRelPath(in); got != "projects/${HOME}-app/sess.jsonl" {
+		t.Errorf("NormalizeRelPath(%q) = %q", in, got)
+	}
+	got, ok := m.ResolveRelPath("projects/${HOME}-app/sess.jsonl")
+	if !ok || got != in {
+		t.Errorf("ResolveRelPath = (%q, %v), want (%q, true)", got, ok, in)
+	}
+}
+
+func mustJSONString(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
 func TestPathMapperValidation(t *testing.T) {
 	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "home"}); err == nil {
 		t.Error("expected reserved-name error for HOME (case-insensitive)")

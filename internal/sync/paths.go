@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -28,6 +29,11 @@ import (
 // HOME is always mapped. Additional prefixes (e.g. ~/work on one machine,
 // ~/Projects on another) can be mapped via the path_map config, with both
 // machines pointing their own local path at the same token name.
+//
+// A mapped prefix that is a symlink is canonicalized to its target, because
+// that is the path `claude --resume` looks sessions up under. The symlink
+// spelling is still recognized on the way in, so sessions recorded through
+// either form collapse to one token.
 type PathMapper struct {
 	// mappings ordered longest local path first so the most specific prefix wins
 	mappings []pathMapping
@@ -35,14 +41,25 @@ type PathMapper struct {
 
 type pathMapping struct {
 	name      string // token name, e.g. "HOME", "WORK"
-	localPath string // absolute local path, no trailing slash
+	localPath string // absolute local path, symlink-resolved, no trailing slash
 	encLocal  string // localPath in Claude Code's directory encoding
-	normRe    *regexp.Regexp
-	normRepl  []byte // replacement template: token ($-escaped) + boundary group
+	// aliases are the local spellings normalization accepts, longest first:
+	// localPath plus, when the configured path is a symlink, the unresolved
+	// path Claude Code recorded when the user cd'd through it.
+	aliases []pathAlias
 	// resolveRe captures the token and its path tail so the tail's separators
 	// can follow localPath's convention; otherwise a foreign-OS separator
 	// survives after the prefix (e.g. C:\Users\bob/foo) and cwd matching fails.
 	resolveRe *regexp.Regexp
+}
+
+// pathAlias is one local spelling of a mapped prefix, with the precomputed
+// forms used to match it in a remote key and in file content.
+type pathAlias struct {
+	localPath string
+	encLocal  string // localPath in Claude Code's directory encoding
+	normRe    *regexp.Regexp
+	normRepl  []byte // replacement template: token ($-escaped) + boundary group
 }
 
 var pathTokenNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -52,6 +69,19 @@ var pathTokenNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, error) {
 	m := &PathMapper{}
 
+	newAlias := func(name, localPath string) pathAlias {
+		return pathAlias{
+			localPath: localPath,
+			encLocal:  EncodeClaudePath(localPath),
+			// Boundary-aware: only replace the path when it is not followed by a
+			// name character, so /Users/merv never matches inside /Users/mervynlally.
+			normRe: regexp.MustCompile(regexp.QuoteMeta(localPath) + `([^A-Za-z0-9_.-]|$)`),
+			// "$$" = literal "$" in a regexp replacement template; without it
+			// "${HOME}" would itself be read as a group reference
+			normRepl: []byte("$${" + name + "}${1}"),
+		}
+	}
+
 	add := func(name, localPath string) error {
 		localPath = strings.TrimRight(localPath, "/")
 		if localPath == "" {
@@ -60,17 +90,21 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 		if !pathTokenNameRe.MatchString(name) {
 			return fmt.Errorf("invalid path_map token %q: use uppercase letters, digits, underscores (e.g. WORK)", name)
 		}
-		// Boundary-aware: only replace the path when it is not followed by a
-		// name character, so /Users/merv never matches inside /Users/mervynlally.
-		re := regexp.MustCompile(regexp.QuoteMeta(localPath) + `([^A-Za-z0-9_.-]|$)`)
+
+		realPath := resolveSymlinkPath(localPath)
+		aliases := []pathAlias{newAlias(name, realPath)}
+		if realPath != localPath {
+			aliases = append(aliases, newAlias(name, localPath))
+		}
+		sort.SliceStable(aliases, func(i, j int) bool {
+			return len(aliases[i].localPath) > len(aliases[j].localPath)
+		})
+
 		m.mappings = append(m.mappings, pathMapping{
 			name:      name,
-			localPath: localPath,
-			encLocal:  EncodeClaudePath(localPath),
-			normRe:    re,
-			// "$$" = literal "$" in a regexp replacement template; without it
-			// "${HOME}" would itself be read as a group reference
-			normRepl:  []byte("$${" + name + "}${1}"),
+			localPath: realPath,
+			encLocal:  EncodeClaudePath(realPath),
+			aliases:   aliases,
 			resolveRe: regexp.MustCompile(regexp.QuoteMeta(pathToken(name)) + `([/\\][^"\s]*)?`),
 		})
 		return nil
@@ -96,6 +130,19 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 	})
 
 	return m, nil
+}
+
+// resolveSymlinkPath returns p with symlinks resolved. Claude Code keys
+// sessions by the path the user cd'd through, but `claude --resume` looks them
+// up under the resolved real path, so the real path is the canonical form. A
+// path that does not exist on this device is returned unchanged: a prefix is
+// still mappable on a machine where the directory is absent.
+func resolveSymlinkPath(p string) string {
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return p
+	}
+	return strings.TrimRight(filepath.Clean(resolved), `/\`)
 }
 
 // EncodeClaudePath applies Claude Code's project directory encoding: every
@@ -148,8 +195,10 @@ func (m *PathMapper) NormalizeRelPath(relPath string) string {
 		return relPath
 	}
 	for _, mp := range m.mappings {
-		if seg == mp.encLocal || strings.HasPrefix(seg, mp.encLocal+"-") {
-			return "projects/" + pathToken(mp.name) + seg[len(mp.encLocal):] + rest
+		for _, a := range mp.aliases {
+			if seg == a.encLocal || strings.HasPrefix(seg, a.encLocal+"-") {
+				return "projects/" + pathToken(mp.name) + seg[len(a.encLocal):] + rest
+			}
 		}
 	}
 	return relPath
@@ -183,7 +232,9 @@ func (m *PathMapper) NormalizeContent(data []byte) []byte {
 		return data
 	}
 	for _, mp := range m.mappings {
-		data = mp.normRe.ReplaceAll(data, mp.normRepl)
+		for _, a := range mp.aliases {
+			data = a.normRe.ReplaceAll(data, a.normRepl)
+		}
 	}
 	return data
 }
@@ -289,11 +340,13 @@ func (m *PathMapper) mapFile(relPath string, data []byte, resolve bool) []byte {
 // direction: false normalizes local paths to tokens, true resolves tokens back.
 func (m *PathMapper) mapJSON(data []byte, resolve, indent bool) []byte {
 	for _, mp := range m.mappings {
-		from, to := mp.localPath, pathToken(mp.name)
 		if resolve {
-			from, to = to, from
+			data = mapJSONPaths(data, pathToken(mp.name), mp.localPath, indent)
+			continue
 		}
-		data = mapJSONPaths(data, from, to, indent)
+		for _, a := range mp.aliases {
+			data = mapJSONPaths(data, a.localPath, pathToken(mp.name), indent)
+		}
 	}
 	return data
 }
