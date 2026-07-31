@@ -70,6 +70,12 @@ type Config struct {
 	//     ~/Projects: WORK
 	PathMap map[string]string `yaml:"path_map,omitempty"`
 
+	// ResolveSymlinks canonicalizes a mapped prefix that is a symlink to its
+	// target, so sessions recorded through the symlink resume under the real
+	// path Claude Code looks them up by. Nil defaults to enabled; set false to
+	// keep the literal symlink path. See ResolveSymlinksEnabled.
+	ResolveSymlinks *bool `yaml:"resolve_symlinks,omitempty"`
+
 	// ClaudeDirOverride allows overriding the default ~/.claude path (for testing)
 	ClaudeDirOverride string `yaml:"-"`
 
@@ -315,6 +321,12 @@ func (c *Config) IsMCPSyncEnabled() bool {
 // SetMCPSync sets the MCP sync state. Pass true to enable, false to explicitly disable.
 func (c *Config) SetMCPSync(enabled bool) {
 	c.MCPSync = &enabled
+}
+
+// ResolveSymlinksEnabled reports whether symlinked prefixes are canonicalized.
+// Nil (unset) defaults to true; only an explicit false disables it.
+func (c *Config) ResolveSymlinksEnabled() bool {
+	return c.ResolveSymlinks == nil || *c.ResolveSymlinks
 }
 
 // IsExcluded returns true if the given relative path matches any exclude pattern.

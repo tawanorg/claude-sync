@@ -2,8 +2,10 @@ package sync
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -27,6 +29,11 @@ import (
 // HOME is always mapped. Additional prefixes (e.g. ~/work on one machine,
 // ~/Projects on another) can be mapped via the path_map config, with both
 // machines pointing their own local path at the same token name.
+//
+// A mapped prefix that is a symlink is canonicalized to its target, because
+// that is the path `claude --resume` looks sessions up under. The symlink
+// spelling is still recognized on the way in, so sessions recorded through
+// either form collapse to one token.
 type PathMapper struct {
 	// mappings ordered longest local path first so the most specific prefix wins
 	mappings []pathMapping
@@ -34,7 +41,22 @@ type PathMapper struct {
 
 type pathMapping struct {
 	name      string // token name, e.g. "HOME", "WORK"
-	localPath string // absolute local path, no trailing slash
+	localPath string // absolute local path, symlink-resolved, no trailing slash
+	encLocal  string // localPath in Claude Code's directory encoding
+	// aliases are the local spellings normalization accepts, longest first:
+	// localPath plus, when the configured path is a symlink, the unresolved
+	// path Claude Code recorded when the user cd'd through it.
+	aliases []pathAlias
+	// resolveRe captures the token and its path tail so the tail's separators
+	// can follow localPath's convention; otherwise a foreign-OS separator
+	// survives after the prefix (e.g. C:\Users\bob/foo) and cwd matching fails.
+	resolveRe *regexp.Regexp
+}
+
+// pathAlias is one local spelling of a mapped prefix, with the precomputed
+// forms used to match it in a remote key and in file content.
+type pathAlias struct {
+	localPath string
 	encLocal  string // localPath in Claude Code's directory encoding
 	normRe    *regexp.Regexp
 	normRepl  []byte // replacement template: token ($-escaped) + boundary group
@@ -43,9 +65,24 @@ type pathMapping struct {
 var pathTokenNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 // NewPathMapper builds a mapper for this device. userMap maps local absolute
-// paths (already ~-expanded) to token names shared across devices.
-func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, error) {
+// paths (already ~-expanded) to token names shared across devices. When
+// resolveSymlinks is true a mapped prefix that is a symlink is canonicalized to
+// its target, with the symlink spelling kept as an alias.
+func NewPathMapper(homeDir string, userMap map[string]string, resolveSymlinks bool) (*PathMapper, error) {
 	m := &PathMapper{}
+
+	newAlias := func(name, localPath string) pathAlias {
+		return pathAlias{
+			localPath: localPath,
+			encLocal:  EncodeClaudePath(localPath),
+			// Boundary-aware: only replace the path when it is not followed by a
+			// name character, so /Users/merv never matches inside /Users/mervynlally.
+			normRe: regexp.MustCompile(regexp.QuoteMeta(localPath) + `([^A-Za-z0-9_.-]|$)`),
+			// "$$" = literal "$" in a regexp replacement template; without it
+			// "${HOME}" would itself be read as a group reference
+			normRepl: []byte("$${" + name + "}${1}"),
+		}
+	}
 
 	add := func(name, localPath string) error {
 		localPath = strings.TrimRight(localPath, "/")
@@ -55,17 +92,25 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 		if !pathTokenNameRe.MatchString(name) {
 			return fmt.Errorf("invalid path_map token %q: use uppercase letters, digits, underscores (e.g. WORK)", name)
 		}
-		// Boundary-aware: only replace the path when it is not followed by a
-		// name character, so /Users/merv never matches inside /Users/mervynlally.
-		re := regexp.MustCompile(regexp.QuoteMeta(localPath) + `([^A-Za-z0-9_.-]|$)`)
+
+		realPath := localPath
+		if resolveSymlinks {
+			realPath = resolveSymlinkPath(localPath)
+		}
+		aliases := []pathAlias{newAlias(name, realPath)}
+		if realPath != localPath {
+			aliases = append(aliases, newAlias(name, localPath))
+		}
+		sort.SliceStable(aliases, func(i, j int) bool {
+			return len(aliases[i].localPath) > len(aliases[j].localPath)
+		})
+
 		m.mappings = append(m.mappings, pathMapping{
 			name:      name,
-			localPath: localPath,
-			encLocal:  EncodeClaudePath(localPath),
-			normRe:    re,
-			// "$$" = literal "$" in a regexp replacement template; without it
-			// "${HOME}" would itself be read as a group reference
-			normRepl: []byte("$${" + name + "}${1}"),
+			localPath: realPath,
+			encLocal:  EncodeClaudePath(realPath),
+			aliases:   aliases,
+			resolveRe: regexp.MustCompile(regexp.QuoteMeta(pathToken(name)) + `([/\\][^"\s]*)?`),
 		})
 		return nil
 	}
@@ -90,6 +135,19 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 	})
 
 	return m, nil
+}
+
+// resolveSymlinkPath returns p with symlinks resolved. Claude Code keys
+// sessions by the path the user cd'd through, but `claude --resume` looks them
+// up under the resolved real path, so the real path is the canonical form. A
+// path that does not exist on this device is returned unchanged: a prefix is
+// still mappable on a machine where the directory is absent.
+func resolveSymlinkPath(p string) string {
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return p
+	}
+	return strings.TrimRight(filepath.Clean(resolved), `/\`)
 }
 
 // EncodeClaudePath applies Claude Code's project directory encoding: every
@@ -142,8 +200,10 @@ func (m *PathMapper) NormalizeRelPath(relPath string) string {
 		return relPath
 	}
 	for _, mp := range m.mappings {
-		if seg == mp.encLocal || strings.HasPrefix(seg, mp.encLocal+"-") {
-			return "projects/" + pathToken(mp.name) + seg[len(mp.encLocal):] + rest
+		for _, a := range mp.aliases {
+			if seg == a.encLocal || strings.HasPrefix(seg, a.encLocal+"-") {
+				return "projects/" + pathToken(mp.name) + seg[len(a.encLocal):] + rest
+			}
 		}
 	}
 	return relPath
@@ -177,30 +237,67 @@ func (m *PathMapper) NormalizeContent(data []byte) []byte {
 		return data
 	}
 	for _, mp := range m.mappings {
-		data = mp.normRe.ReplaceAll(data, mp.normRepl)
+		for _, a := range mp.aliases {
+			data = a.normRe.ReplaceAll(data, a.normRepl)
+		}
 	}
 	return data
 }
 
-// ResolveContent replaces portable tokens with this device's local paths.
+// ResolveContent replaces portable tokens with this device's local paths,
+// rewriting the following path tail's separators to localPath's convention so a
+// path authored on another OS resolves to a valid native path.
 func (m *PathMapper) ResolveContent(data []byte) []byte {
 	if m == nil {
 		return data
 	}
 	for _, mp := range m.mappings {
-		data = bytes.ReplaceAll(data, []byte(pathToken(mp.name)), []byte(mp.localPath))
+		sep := pathSep(mp.localPath)
+		data = mp.resolveRe.ReplaceAllFunc(data, func(match []byte) []byte {
+			tail := match[len(pathToken(mp.name)):]
+			return append([]byte(mp.localPath), replaceSeps(string(tail), sep)...)
+		})
 	}
 	return data
 }
 
+// portableStatePaths are files outside projects/ that embed absolute paths.
+// A JSON file is translated by decoding it and rewriting string values: a
+// Windows path is escaped in the source ("C:\\Users\\bob"), so raw byte
+// replacement would eat an escape and leave the document invalid.
+var portableStatePaths = map[string]bool{
+	"history.jsonl":                   true,
+	"plugins/known_marketplaces.json": true,
+	"plugins/installed_plugins.json":  true,
+}
+
+// basePath is the path a translation rule applies to: a conflict copy follows
+// the file it was made from, so its content is resolved for this device and
+// stays comparable against the local version.
+func basePath(relPath string) string {
+	base, _, _ := SplitConflictPath(relPath)
+	return path.Clean(base)
+}
+
+// isPortableJSONPath reports whether relPath is translated as a single JSON
+// document rather than raw bytes.
+func isPortableJSONPath(relPath string) bool {
+	return path.Ext(relPath) == ".json"
+}
+
+// isPortableJSONLPath reports whether relPath is JSON-lines, translated one
+// JSON document per line.
+func isPortableJSONLPath(relPath string) bool {
+	return path.Ext(relPath) == ".jsonl"
+}
+
 // IsPortableContentPath reports whether content path translation applies to
-// this relative path: text formats under projects/ plus the prompt history.
+// this relative path: text formats under projects/, the prompt history, and
+// the plugin state files.
 // Conflict copies (path.conflict.<timestamp>) inherit the base path's rule.
 func IsPortableContentPath(relPath string) bool {
-	if i := strings.Index(relPath, ".conflict."); i >= 0 {
-		relPath = relPath[:i]
-	}
-	if relPath == "history.jsonl" {
+	relPath = basePath(relPath)
+	if portableStatePaths[relPath] {
 		return true
 	}
 	if !strings.HasPrefix(relPath, "projects/") {
@@ -211,4 +308,147 @@ func IsPortableContentPath(relPath string) bool {
 		return true
 	}
 	return false
+}
+
+// NormalizeFile replaces this device's mapped path prefixes with portable
+// tokens in the content of relPath. JSON and JSON-lines files are translated
+// through a JSON decode/encode so an inserted path stays correctly escaped and
+// re-separated; other text is translated with boundary-aware byte replacement.
+func (m *PathMapper) NormalizeFile(relPath string, data []byte) []byte {
+	return m.mapFile(relPath, data, false)
+}
+
+// ResolveFile replaces portable tokens with this device's local paths in the
+// content of relPath, mirroring NormalizeFile.
+func (m *PathMapper) ResolveFile(relPath string, data []byte) []byte {
+	return m.mapFile(relPath, data, true)
+}
+
+func (m *PathMapper) mapFile(relPath string, data []byte, resolve bool) []byte {
+	if m == nil {
+		return data
+	}
+	base := basePath(relPath)
+	switch {
+	case isPortableJSONPath(base):
+		return m.mapJSON(data, resolve, true)
+	case isPortableJSONLPath(base):
+		return m.mapJSONL(data, resolve)
+	case resolve:
+		return m.ResolveContent(data)
+	default:
+		return m.NormalizeContent(data)
+	}
+}
+
+// mapJSON translates every mapping in a single JSON document. resolve picks the
+// direction: false normalizes local paths to tokens, true resolves tokens back.
+func (m *PathMapper) mapJSON(data []byte, resolve, indent bool) []byte {
+	for _, mp := range m.mappings {
+		if resolve {
+			data = mapJSONPaths(data, pathToken(mp.name), mp.localPath, indent)
+			continue
+		}
+		for _, a := range mp.aliases {
+			data = mapJSONPaths(data, a.localPath, pathToken(mp.name), indent)
+		}
+	}
+	return data
+}
+
+// mapJSONL translates a JSON-lines file one document per line, preserving line
+// endings. Lines that are not valid JSON pass through unchanged.
+func (m *PathMapper) mapJSONL(data []byte, resolve bool) []byte {
+	lines := bytes.Split(data, []byte("\n"))
+	for i, line := range lines {
+		trimmed := bytes.TrimRight(line, "\r")
+		if len(bytes.TrimSpace(trimmed)) == 0 {
+			continue
+		}
+		mapped := m.mapJSON(trimmed, resolve, false)
+		mapped = append(mapped, line[len(trimmed):]...)
+		lines[i] = mapped
+	}
+	return bytes.Join(lines, []byte("\n"))
+}
+
+// pathSep reports the separator p is written with, so a translated path keeps
+// the target's convention rather than the running platform's.
+func pathSep(p string) byte {
+	if strings.Contains(p, `\`) {
+		return '\\'
+	}
+	return '/'
+}
+
+// replaceSeps rewrites every separator in p to sep.
+func replaceSeps(p string, sep byte) string {
+	return strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' {
+			return rune(sep)
+		}
+		return r
+	}, p)
+}
+
+// mapJSONPaths decodes data as JSON and rewrites every string value that
+// begins with from, swapping that prefix for to and re-separating the
+// remainder in to's convention. Escaping is left to the encoder, so a Windows
+// path stays valid; content that is not valid JSON is returned unchanged.
+// Indented output re-indents state files for readability; JSON-lines callers
+// pass indent=false to keep each document on a single line.
+func mapJSONPaths(data []byte, from, to string, indent bool) []byte {
+	var doc any
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&doc); err != nil {
+		return data
+	}
+
+	mapPath := func(s string) string {
+		if !strings.HasPrefix(s, from) {
+			return s
+		}
+		rest := s[len(from):]
+		if rest != "" && rest[0] != '/' && rest[0] != '\\' {
+			return s
+		}
+		return to + replaceSeps(rest, pathSep(to))
+	}
+
+	var walk func(any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case string:
+			return mapPath(t)
+		case []any:
+			for i, e := range t {
+				t[i] = walk(e)
+			}
+			return t
+		case map[string]any:
+			for k, e := range t {
+				t[k] = walk(e)
+			}
+			return t
+		}
+		return v
+	}
+
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if indent {
+		enc.SetIndent("", "  ")
+	}
+	if err := enc.Encode(walk(doc)); err != nil {
+		return data
+	}
+	out := buf.Bytes()
+	if !indent {
+		// A JSON-lines document is one line; Encode always appends a newline the
+		// caller rejoins itself. State files keep the newline they had.
+		out = bytes.TrimSuffix(out, []byte("\n"))
+	}
+	return out
 }

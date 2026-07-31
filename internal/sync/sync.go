@@ -104,7 +104,7 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	mapper, err := NewPathMapper(homeDir, cfg.PathMap)
+	mapper, err := NewPathMapper(homeDir, cfg.PathMap, cfg.ResolveSymlinksEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 // NewSyncerWith creates a Syncer with pre-built dependencies (for testing).
 func NewSyncerWith(cfg *config.Config, store storage.Storage, enc *crypto.Encryptor, state *SyncState, claudeDir string, quiet bool) *Syncer {
 	homeDir, _ := os.UserHomeDir()
-	mapper, _ := NewPathMapper(homeDir, cfg.PathMap)
+	mapper, _ := NewPathMapper(homeDir, cfg.PathMap, cfg.ResolveSymlinksEnabled())
 	return &Syncer{
 		storage:   store,
 		encryptor: enc,
@@ -432,7 +432,7 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 
 	// Replace machine-specific paths with portable tokens in session content
 	if IsPortableContentPath(relativePath) {
-		data = s.paths.NormalizeContent(data)
+		data = s.paths.NormalizeFile(relativePath, data)
 	}
 
 	// Compress
@@ -487,7 +487,7 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 
 	// Replace portable tokens with this device's paths in session content
 	if IsPortableContentPath(relativePath) {
-		data = s.paths.ResolveContent(data)
+		data = s.paths.ResolveFile(relativePath, data)
 	}
 
 	// Guard against path traversal from crafted remote keys
@@ -524,11 +524,34 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	return nil
 }
 
+// conflictMarker separates a path from the timestamp of the remote copy saved
+// beside it when both sides changed.
+const conflictMarker = ".conflict."
+
+// ConflictPath names the copy that holds the remote version of relPath.
+func ConflictPath(relPath string, at time.Time) string {
+	return relPath + conflictMarker + at.Format("20060102-150405")
+}
+
+// SplitConflictPath returns the path a conflict copy was made from and its
+// timestamp. ok is false when p is not a conflict copy. The marker is only
+// honored in the final segment, so a parent directory that happens to contain
+// ".conflict." never triggers a false match.
+func SplitConflictPath(p string) (base, timestamp string, ok bool) {
+	seg := strings.LastIndexAny(p, `/\`) + 1
+	i := strings.Index(p[seg:], conflictMarker)
+	if i < 0 {
+		return p, "", false
+	}
+	i += seg
+	return p[:i], p[i+len(conflictMarker):], true
+}
+
 func (s *Syncer) handleConflict(ctx context.Context, relativePath string, remoteObj storage.ObjectInfo) error {
 	s.log("Conflict detected: %s (keeping local, saving remote as .conflict)", relativePath)
 
 	// Download remote version with conflict suffix
-	conflictPath := relativePath + ".conflict." + time.Now().Format("20060102-150405")
+	conflictPath := ConflictPath(relativePath, time.Now())
 	if err := s.downloadFile(ctx, conflictPath, remoteObj.Key, nil); err != nil {
 		return fmt.Errorf("failed to save conflict file: %w", err)
 	}
