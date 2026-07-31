@@ -552,6 +552,27 @@ func TestIsMCPSyncEnabled(t *testing.T) {
 	}
 }
 
+func TestResolveSymlinksEnabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		value *bool
+		want  bool
+	}{
+		{"nil (unset) defaults to true", nil, true},
+		{"true returns true", boolPtr(true), true},
+		{"false returns false", boolPtr(false), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{ResolveSymlinks: tt.value}
+			if got := cfg.ResolveSymlinksEnabled(); got != tt.want {
+				t.Errorf("ResolveSymlinksEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSetMCPSync(t *testing.T) {
 	cfg := &Config{}
 

@@ -13,7 +13,7 @@ import (
 
 func mustMapper(t *testing.T, home string, userMap map[string]string) *PathMapper {
 	t.Helper()
-	m, err := NewPathMapper(home, userMap)
+	m, err := NewPathMapper(home, userMap, true)
 	if err != nil {
 		t.Fatalf("NewPathMapper: %v", err)
 	}
@@ -321,6 +321,31 @@ func TestSymlinkedPathMapEntry(t *testing.T) {
 	}
 }
 
+func TestResolveSymlinksDisabledKeepsLiteralPath(t *testing.T) {
+	link, realPath := mustSymlinkedHome(t)
+
+	m, err := NewPathMapper(link, nil, false)
+	if err != nil {
+		t.Fatalf("NewPathMapper: %v", err)
+	}
+
+	// With resolution off the symlink spelling is the token; the real path is
+	// a foreign directory and stays untouched.
+	viaLink := "projects/" + EncodeClaudePath(link) + "-app/sess.jsonl"
+	if got := m.NormalizeRelPath(viaLink); got != "projects/${HOME}-app/sess.jsonl" {
+		t.Errorf("NormalizeRelPath(%q) = %q", viaLink, got)
+	}
+	viaReal := "projects/" + EncodeClaudePath(realPath) + "-app/sess.jsonl"
+	if got := m.NormalizeRelPath(viaReal); got != viaReal {
+		t.Errorf("NormalizeRelPath(%q) = %q, want unchanged", viaReal, got)
+	}
+
+	got, ok := m.ResolveRelPath("projects/${HOME}-app/sess.jsonl")
+	if !ok || got != viaLink {
+		t.Errorf("ResolveRelPath = (%q, %v), want (%q, true)", got, ok, viaLink)
+	}
+}
+
 func TestMissingDirectoryKeepsLiteralPath(t *testing.T) {
 	// A prefix that does not exist on this device must still map, unchanged.
 	absent := filepath.Join(t.TempDir(), "no-such-dir")
@@ -346,13 +371,13 @@ func mustJSONString(t *testing.T, s string) string {
 }
 
 func TestPathMapperValidation(t *testing.T) {
-	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "home"}); err == nil {
+	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "home"}, true); err == nil {
 		t.Error("expected reserved-name error for HOME (case-insensitive)")
 	}
-	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "my-work"}); err == nil {
+	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "my-work"}, true); err == nil {
 		t.Error("expected invalid token name error")
 	}
-	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "WORK_2"}); err != nil {
+	if _, err := NewPathMapper("/Users/a", map[string]string{"/x": "WORK_2"}, true); err != nil {
 		t.Errorf("valid token rejected: %v", err)
 	}
 }

@@ -104,7 +104,7 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	mapper, err := NewPathMapper(homeDir, cfg.PathMap)
+	mapper, err := NewPathMapper(homeDir, cfg.PathMap, cfg.ResolveSymlinksEnabled())
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func NewSyncer(cfg *config.Config, quiet bool) (*Syncer, error) {
 // NewSyncerWith creates a Syncer with pre-built dependencies (for testing).
 func NewSyncerWith(cfg *config.Config, store storage.Storage, enc *crypto.Encryptor, state *SyncState, claudeDir string, quiet bool) *Syncer {
 	homeDir, _ := os.UserHomeDir()
-	mapper, _ := NewPathMapper(homeDir, cfg.PathMap)
+	mapper, _ := NewPathMapper(homeDir, cfg.PathMap, cfg.ResolveSymlinksEnabled())
 	return &Syncer{
 		storage:   store,
 		encryptor: enc,

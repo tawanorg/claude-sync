@@ -65,8 +65,10 @@ type pathAlias struct {
 var pathTokenNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 // NewPathMapper builds a mapper for this device. userMap maps local absolute
-// paths (already ~-expanded) to token names shared across devices.
-func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, error) {
+// paths (already ~-expanded) to token names shared across devices. When
+// resolveSymlinks is true a mapped prefix that is a symlink is canonicalized to
+// its target, with the symlink spelling kept as an alias.
+func NewPathMapper(homeDir string, userMap map[string]string, resolveSymlinks bool) (*PathMapper, error) {
 	m := &PathMapper{}
 
 	newAlias := func(name, localPath string) pathAlias {
@@ -91,7 +93,10 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 			return fmt.Errorf("invalid path_map token %q: use uppercase letters, digits, underscores (e.g. WORK)", name)
 		}
 
-		realPath := resolveSymlinkPath(localPath)
+		realPath := localPath
+		if resolveSymlinks {
+			realPath = resolveSymlinkPath(localPath)
+		}
 		aliases := []pathAlias{newAlias(name, realPath)}
 		if realPath != localPath {
 			aliases = append(aliases, newAlias(name, localPath))

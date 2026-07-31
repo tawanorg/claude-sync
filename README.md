@@ -238,6 +238,8 @@ Synced verbatim, those would be **different projects** and `claude --resume` on 
 
   Sessions under either directory sync to the shared `${WORK}` namespace and resume correctly on both machines.
 
+- **Symlinked project roots are canonicalized.** If a mapped directory is a symlink (e.g. `~/Developer` pointing at `~/Documents/Projects`), the real target is used, so sessions recorded through the symlink resume under the path `claude --resume` looks them up by. To keep the literal symlink path instead, set `resolve_symlinks: false` in `~/.claude-sync/config.yaml`.
+
 **Upgrading from an older version?** Run `claude-sync migrate` once on each device to convert existing remote data to portable keys. Paths the current device doesn't own are left for the other device's migrate run.
 
 ## Commands
