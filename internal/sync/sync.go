@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,6 +26,14 @@ import (
 )
 
 const defaultWorkers = 10
+
+// conflictArtifactRe matches only this tool's own conflict artifacts
+// (<name>.conflict.<yyyymmdd>-<hhmmss>, the format handleConflict writes),
+// never user files that merely contain ".conflict." in their names. The
+// anchoring matters: excluding a path that is already tracked in state makes
+// the next push prune it from the bucket, so a loose pattern would turn into
+// remote deletion of real data.
+var conflictArtifactRe = regexp.MustCompile(`\.conflict\.\d{8}-\d{6}$`)
 
 // maxDecompressedSize is the maximum allowed size for decompressed data (500MB).
 // This prevents decompression bomb attacks from consuming excessive memory.
@@ -146,6 +155,15 @@ func (s *Syncer) progress(event ProgressEvent) {
 }
 
 func (s *Syncer) isExcluded(relPath string) bool {
+	// Per-machine debris never syncs, regardless of user excludes. A .lock is
+	// a local process lock — on another machine it is indistinguishable from a
+	// lock genuinely held there. A .conflict.<ts> file is this tool's own local
+	// recovery artifact; uploading it replicates the artifact to every machine,
+	// where each copy can itself be re-detected and spawn further ones.
+	base := filepath.Base(relPath)
+	if base == ".lock" || conflictArtifactRe.MatchString(base) {
+		return true
+	}
 	return s.cfg.IsExcluded(relPath)
 }
 
