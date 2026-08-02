@@ -2,9 +2,22 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrNotFound distinguishes a missing object from transient failures
+// (timeouts, throttling, 5xx). Adapters wrap their provider-specific
+// not-found errors with it; callers that must not confuse "absent" with
+// "unreachable" — such as the history merge-on-push, where the difference is
+// clobbering the bucket union — check it via IsNotFound.
+var ErrNotFound = errors.New("object not found")
+
+// IsNotFound reports whether err indicates the object does not exist.
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
 
 // Provider represents a storage provider type
 type Provider string

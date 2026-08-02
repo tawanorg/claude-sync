@@ -186,6 +186,10 @@ func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, err
 		Key:    aws.String(key),
 	})
 	if err != nil {
+		var notFound *types.NotFound
+		if errors.As(err, &notFound) {
+			return nil, fmt.Errorf("%s: %w", key, storage.ErrNotFound)
+		}
 		return nil, err
 	}
 
