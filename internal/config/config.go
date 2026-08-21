@@ -21,6 +21,11 @@ const (
 	// The _external/ prefix separates it from ~/.claude/-relative files.
 	MCPRemoteKey = "_external/mcp-servers.json"
 
+	// DesktopRemoteKey is the remote storage key for the desktop app's sidebar
+	// session index. The index lives outside ~/.claude, so it travels as its own
+	// external object rather than as part of the synced path set.
+	DesktopRemoteKey = "_external/desktop-index.json"
+
 	// Sync scopes control which subset of ~/.claude is synced.
 	// ScopeFull (default) syncs everything in SyncPaths; ScopeSessions limits
 	// syncing to portable conversation data only.
