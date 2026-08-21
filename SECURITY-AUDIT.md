@@ -9,14 +9,14 @@
 
 ## Executive Summary
 
-claude-sync is a Go CLI tool (with npm wrapper) that syncs `~/.claude` directories across devices using cloud storage (R2/S3/GCS) with age encryption. **No critical or high vulnerabilities found.** Five medium findings relate to supply chain integrity and cryptographic design tradeoffs. Five low findings cover file permissions and path handling.
+claude-sync is a Go CLI tool (with npm wrapper) that syncs `~/.claude` directories across devices using cloud storage (R2/S3/GCS) with age encryption. **No critical or high vulnerabilities found.** Five medium findings relate to supply chain integrity and cryptographic design tradeoffs. Six low findings cover file permissions, path handling, and write scope.
 
 | Severity | Count |
 |----------|-------|
 | Critical | 0 |
 | High     | 0 |
 | Medium   | 5 |
-| Low      | 5 |
+| Low      | 6 |
 | Info     | 5 |
 
 ---
@@ -139,6 +139,29 @@ CI builds and tests against Go 1.21 while the module requires Go 1.24. Tests may
 
 ---
 
+### L6 — Desktop Index Writes Outside `~/.claude`
+
+**File:** `internal/desktop/apply.go`, `internal/desktop/record.go`
+
+`pull --desktop` and `desktop pull` write index records into the desktop app's
+support directory. This is the tool's first write target outside `~/.claude`.
+Record filenames derive from a `sessionId` field carried in remote data, which
+makes them attacker-influenced input to a filesystem write.
+
+**Mitigating factors:** Filenames are refused rather than sanitized — any value
+containing a path separator or `..`, or which differs from its own
+`filepath.Base`, is rejected and the record skipped (covered by
+`TestApplyRejectsTraversingSessionID`). The destination directory is discovered
+on the local machine and never taken from remote data. Both entry points are
+opt-in; an ordinary `pull` does not write here.
+
+**Residual risk:** An actor with bucket write access can still add sidebar
+entries naming arbitrary transcript ids. These surface as rows in the app's
+sidebar. No content is executed and no file outside the index directory is
+written, so the effect is limited to sidebar clutter.
+
+---
+
 ## Clean Areas
 
 | Area | Status |
@@ -149,6 +172,7 @@ CI builds and tests against Go 1.21 while the module requires Go 1.24. Tests may
 | eval/exec injection | No dynamic code execution |
 | Encryption | Sound — age v1.3.1, X25519, Argon2id |
 | Input validation | CLI inputs properly handled |
+| Index record filenames | Validated — traversal refused rather than sanitized (L6) |
 
 ---
 
