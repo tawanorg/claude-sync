@@ -73,6 +73,7 @@ func main() {
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
+		desktopCmd(),
 		autoCmd(),
 		pathsCmd(),
 	)
@@ -1012,6 +1013,7 @@ func runWebDAVWizard(webdavURL, username, password, pathPrefix string) (*storage
 
 func pushCmd() *cobra.Command {
 	var includeMCP bool
+	var skipArchived bool
 
 	cmd := &cobra.Command{
 		Use:   "push",
@@ -1027,6 +1029,7 @@ func pushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			syncer.SetSkipArchived(skipArchived)
 
 			if !quiet {
 				syncer.SetProgressFunc(func(event sync.ProgressEvent) {
@@ -1109,16 +1112,25 @@ func pushCmd() *cobra.Command {
 				}
 			}
 
+			// The sidebar index always travels with a push so archive state can
+			// reach other devices. Without it, an archive decision made here would
+			// never be visible anywhere else.
+			if err := runDesktopPush(ctx, syncer); err != nil {
+				return err
+			}
+
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
+	cmd.Flags().BoolVar(&skipArchived, "skip-archived", false, "Do not upload transcripts of archived conversations (their archived state is still synced)")
 	return cmd
 }
 
 func pullCmd() *cobra.Command {
 	var dryRun, force, includeMCP, rebuildHistory bool
+	var desktopSync bool
 
 	cmd := &cobra.Command{
 		Use:   "pull",
@@ -1247,6 +1259,14 @@ Examples:
 				}
 			}
 
+			// Hydrate the desktop sidebar, which reads its own index rather than
+			// ~/.claude/projects. Skipped on a dry run: it writes to disk.
+			if desktopSync && !dryRun {
+				if err := runDesktopPull(ctx, syncer); err != nil {
+					return err
+				}
+			}
+
 			// Rebuild prompt history from the freshly-pulled session files.
 			if rebuildHistory && !dryRun {
 				if err := runHistoryRebuild(); err != nil {
@@ -1262,6 +1282,7 @@ Examples:
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
 	cmd.Flags().BoolVar(&includeMCP, "include-mcp", false, "Also sync MCP server configs from ~/.claude.json")
 	cmd.Flags().BoolVar(&rebuildHistory, "rebuild-history", false, "Rebuild ~/.claude/history.jsonl from session files after pulling")
+	cmd.Flags().BoolVar(&desktopSync, "desktop", false, "Also restore the Claude desktop app's sidebar entries for pulled conversations")
 
 	return cmd
 }
@@ -2734,6 +2755,57 @@ func printReleaseBody(body string) {
 
 // MCP sync commands
 
+func desktopCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "desktop",
+		Short: "Manage Claude desktop app sidebar sync",
+		Long: `Sync the Claude desktop app's sidebar session index.
+
+The desktop app renders its sidebar from its own index, not from
+~/.claude/projects. Conversations carried by push/pull are therefore resumable
+with 'claude --resume' but stay invisible in the app until that index travels
+too. These subcommands move the index on its own, without syncing conversations.`,
+	}
+	cmd.AddCommand(desktopPushCmd(), desktopPullCmd())
+	return cmd
+}
+
+func desktopPushCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "push",
+		Short: "Upload this device's sidebar index",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+			return runDesktopPush(context.Background(), syncer)
+		},
+	}
+}
+
+func desktopPullCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pull",
+		Short: "Restore sidebar entries from another device (leaves conversations untouched)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+			return runDesktopPull(context.Background(), syncer)
+		},
+	}
+}
+
 func mcpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
@@ -2930,6 +3002,63 @@ func mcpPullCmd() *cobra.Command {
 			return runMCPPull(ctx, syncer)
 		},
 	}
+}
+
+// runDesktopPush uploads the desktop sidebar index alongside the file push.
+//
+// The sidebar renders from an index that lives outside ~/.claude, so a push
+// carrying only transcripts leaves conversations resumable from the CLI but
+// absent from the app on every other machine.
+func runDesktopPush(ctx context.Context, syncer *sync.Syncer) error {
+	result, err := syncer.PushDesktop(ctx)
+	if err != nil {
+		return fmt.Errorf("desktop index push failed: %w", err)
+	}
+	if quiet {
+		return nil
+	}
+	switch {
+	case result.NoIndex:
+		// No desktop app on this machine; nothing worth reporting.
+	case result.Unchanged:
+		fmt.Printf("%s\u2713%s Desktop sidebar: no changes to push\n", colorGreen, colorReset)
+	default:
+		fmt.Printf("%s\u2713%s Desktop sidebar: %s%d records pushed%s\n",
+			colorGreen, colorReset, colorGreen, result.RecordsPushed, colorReset)
+	}
+	return nil
+}
+
+// runDesktopPull applies the remote desktop index to this machine's sidebar.
+func runDesktopPull(ctx context.Context, syncer *sync.Syncer) error {
+	result, err := syncer.PullDesktop(ctx)
+	if err != nil {
+		return fmt.Errorf("desktop index pull failed: %w", err)
+	}
+	if quiet {
+		return nil
+	}
+	switch {
+	case result.NoIndex:
+		fmt.Printf("%s!%s Desktop sidebar: no local index found (is the desktop app installed?)\n", colorYellow, colorReset)
+	case result.NoRemote:
+		fmt.Printf("%s!%s Desktop sidebar: nothing pushed from another device yet\n", colorYellow, colorReset)
+	default:
+		fmt.Printf("%s\u2713%s Desktop sidebar: %s%d added%s, %d archive %s updated\n",
+			colorGreen, colorReset, colorGreen, result.Written, colorReset,
+			result.Updated, pluralRecords(result.Updated))
+		if result.Written > 0 || result.Updated > 0 {
+			fmt.Printf("  %sRestart Claude to see the changes.%s\n", colorDim, colorReset)
+		}
+	}
+	return nil
+}
+
+func pluralRecords(n int) string {
+	if n == 1 {
+		return "state"
+	}
+	return "states"
 }
 
 func runMCPPush(ctx context.Context, syncer *sync.Syncer) error {
