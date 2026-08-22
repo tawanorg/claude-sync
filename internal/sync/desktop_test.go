@@ -49,7 +49,18 @@ func TestDesktopPushPullRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	syncerB := NewSyncerWith(envA.syncer.cfg, envA.store, envA.syncer.encryptor, stateB, t.TempDir(), true)
+	// Machine B must hold the transcript, or the record is correctly skipped as
+	// one that would produce a dead sidebar row.
+	claudeB := t.TempDir()
+	projB := filepath.Join(claudeB, "projects", "-Users-x-proj")
+	if err := os.MkdirAll(projB, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projB, "aaa.jsonl"), []byte(`{"type":"user"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	syncerB := NewSyncerWith(envA.syncer.cfg, envA.store, envA.syncer.encryptor, stateB, claudeB, true)
 	indexB := makeIndex(t, nil)
 	syncerB.desktopDir = indexB
 
@@ -125,4 +136,61 @@ func containsKey(data []byte, key string) bool {
 	}
 	_, ok := m[key]
 	return ok
+}
+
+// A sidebar entry points at a transcript by id. Writing one for a transcript
+// this machine does not have produces a row that opens onto "Session not found
+// on disk" — the index is fine, the conversation behind it simply is not here.
+// Skip those and say so, rather than manufacturing dead rows.
+func TestPullDesktopSkipsSessionsWithoutLocalTranscripts(t *testing.T) {
+	ctx := context.Background()
+
+	envA := setupTestEnv(t)
+	envA.syncer.desktopDir = makeIndex(t, map[string]string{
+		"local_here.json": `{"sessionId":"local_here","cliSessionId":"present-one","isArchived":false}`,
+		"local_gone.json": `{"sessionId":"local_gone","cliSessionId":"absent-one","isArchived":false}`,
+	})
+	if _, err := envA.syncer.PushDesktop(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Machine B has the transcript for only one of the two sessions.
+	stateB, err := LoadStateFromDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeB := t.TempDir()
+	projB := filepath.Join(claudeB, "projects", "-Users-x-proj")
+	if err := os.MkdirAll(projB, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projB, "present-one.jsonl"), []byte(`{"type":"user"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	syncerB := NewSyncerWith(envA.syncer.cfg, envA.store, envA.syncer.encryptor, stateB, claudeB, true)
+	indexB := makeIndex(t, nil)
+	syncerB.desktopDir = indexB
+
+	result, err := syncerB.PullDesktop(ctx)
+	if err != nil {
+		t.Fatalf("PullDesktop() error: %v", err)
+	}
+	if result.Written != 1 {
+		t.Errorf("Written = %d, want 1 (only the session whose transcript is present)", result.Written)
+	}
+	if result.MissingTranscript != 1 {
+		t.Errorf("MissingTranscript = %d, want 1", result.MissingTranscript)
+	}
+
+	labels, err := desktop.Scan(indexB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := labels["absent-one"]; ok {
+		t.Error("wrote a sidebar entry for a transcript this machine does not have")
+	}
+	if _, ok := labels["present-one"]; !ok {
+		t.Error("failed to write the entry whose transcript is present")
+	}
 }

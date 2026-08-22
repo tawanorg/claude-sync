@@ -320,6 +320,12 @@ Conversations that already have a sidebar entry are left untouched. Matching is
 by transcript id rather than the app's per-device record id, so repeated pulls
 never duplicate rows.
 
+A sidebar entry points at a transcript by id, so entries are only written for
+conversations this machine actually has. Sessions whose transcript is absent are
+skipped and reported — without that, the entry would appear in the sidebar and
+open onto "Session not found on disk". Pull the conversations first, or use
+`pull --desktop`, which pulls them before hydrating.
+
 **Archived conversations.** The archived flag exists only in this index; nothing
 in a transcript records it. Archive state travels with every push, and the more
 recent change wins when two devices disagree. To keep archived conversations'

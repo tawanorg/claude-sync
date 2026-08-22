@@ -3047,6 +3047,10 @@ func runDesktopPull(ctx context.Context, syncer *sync.Syncer) error {
 		fmt.Printf("%s\u2713%s Desktop sidebar: %s%d added%s, %d archive %s updated\n",
 			colorGreen, colorReset, colorGreen, result.Written, colorReset,
 			result.Updated, pluralRecords(result.Updated))
+		if result.MissingTranscript > 0 {
+			fmt.Printf("  %s%d skipped — no transcript on this machine; run 'claude-sync pull' first%s\n",
+				colorYellow, result.MissingTranscript, colorReset)
+		}
 		if result.Written > 0 || result.Updated > 0 {
 			fmt.Printf("  %sRestart Claude to see the changes.%s\n", colorDim, colorReset)
 		}

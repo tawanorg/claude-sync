@@ -44,9 +44,15 @@ type DesktopPushResult struct {
 
 // DesktopPullResult summarises a desktop index pull.
 type DesktopPullResult struct {
-	Written  int
-	Updated  int
-	Skipped  int
+	Written int
+	Updated int
+	Skipped int
+
+	// MissingTranscript counts sessions skipped because this machine has no
+	// transcript for them. Writing those records would produce sidebar rows
+	// that open onto "Session not found on disk".
+	MissingTranscript int
+
 	NoIndex  bool
 	NoRemote bool
 }
@@ -191,9 +197,20 @@ func (s *Syncer) PullDesktop(ctx context.Context) (*DesktopPullResult, error) {
 		return nil, fmt.Errorf("desktop index was written by a newer claude-sync (format v%d); upgrade to pull it", payload.Version)
 	}
 
+	// A sidebar record points at a transcript by id. If this machine does not
+	// have that transcript, the row it creates opens onto "Session not found on
+	// disk" — the index is intact but the conversation behind it is elsewhere.
+	// Skip those and report them, so the remedy (pull the conversations first)
+	// is visible instead of appearing as a broken sidebar.
+	local := localTranscriptIDs(s.claudeDir)
+
 	incoming := make([]desktop.Incoming, 0, len(payload.Entries))
 	for _, entry := range payload.Entries {
 		if entry.Record == nil {
+			continue
+		}
+		if id := entry.Record.CLISessionID(); id != "" && !local[id] {
+			result.MissingTranscript++
 			continue
 		}
 		incoming = append(incoming, desktop.Incoming{
@@ -276,4 +293,18 @@ func (s *Syncer) pushExcluder() func(string) bool {
 		id, ok := sessionIDFromPath(relPath)
 		return ok && archived[id]
 	}
+}
+
+// localTranscriptIDs returns the session ids this machine holds transcripts for.
+// Transcripts live at projects/<encoded-project>/<session-id>.jsonl.
+func localTranscriptIDs(claudeDir string) map[string]bool {
+	ids := make(map[string]bool)
+	matches, err := filepath.Glob(filepath.Join(claudeDir, "projects", "*", "*.jsonl"))
+	if err != nil {
+		return ids
+	}
+	for _, path := range matches {
+		ids[strings.TrimSuffix(filepath.Base(path), ".jsonl")] = true
+	}
+	return ids
 }
