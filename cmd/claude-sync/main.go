@@ -2783,6 +2783,9 @@ cliSessionId "claude-sync desktop forget" needs.`,
 			if err != nil {
 				return err
 			}
+			if quiet {
+				return nil
+			}
 			if len(records) == 0 {
 				fmt.Printf("%s⋯%s No desktop session records found\n", colorDim, colorReset)
 				return nil
@@ -2881,17 +2884,18 @@ Examples:
 				return fmt.Errorf("desktop forget failed: %w", err)
 			}
 
+			if quiet {
+				return nil
+			}
 			if len(result.RemovedRemoteKeys) == 0 && len(result.RemovedLocalPaths) == 0 {
 				fmt.Printf("%s⋯%s No matching record found for %q\n", colorDim, colorReset, id)
 				return nil
 			}
-			if !quiet {
-				for _, key := range result.RemovedRemoteKeys {
-					fmt.Printf("  %s-%s remote: %s\n", colorYellow, colorReset, key)
-				}
-				for _, path := range result.RemovedLocalPaths {
-					fmt.Printf("  %s-%s local:  %s\n", colorYellow, colorReset, path)
-				}
+			for _, key := range result.RemovedRemoteKeys {
+				fmt.Printf("  %s-%s remote: %s\n", colorYellow, colorReset, key)
+			}
+			for _, path := range result.RemovedLocalPaths {
+				fmt.Printf("  %s-%s local:  %s\n", colorYellow, colorReset, path)
 			}
 			fmt.Printf("%s✓%s Removed %d remote record(s), %d local file(s)\n",
 				colorGreen, colorReset, len(result.RemovedRemoteKeys), len(result.RemovedLocalPaths))

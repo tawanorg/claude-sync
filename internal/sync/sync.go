@@ -843,18 +843,20 @@ func (s *Syncer) resolveJSONLConflict(ctx context.Context, relativePath string, 
 			return jsonlConflict, cerr
 		}
 
-		final, rerr := os.ReadFile(fullPath)
-		if rerr != nil {
-			return jsonlConflict, rerr
+		// This branch only ever appends, never rewrites, so a concurrent
+		// session's own append is the only way the file can end up longer
+		// than expected — a cheap size check detects that without rereading
+		// the whole (possibly gigabyte-sized) file to compare bytes.
+		info, statErr := os.Stat(fullPath)
+		if statErr != nil {
+			return jsonlConflict, statErr
 		}
-		if bytes.Equal(final, remote) {
-			// Clean fast-forward: record the new content, and that the bucket
-			// already holds exactly these bytes.
-			info, statErr := os.Stat(fullPath)
-			if statErr != nil {
-				return jsonlConflict, statErr
-			}
-			s.state.UpdateFile(relativePath, info, HashBytes(final))
+		if info.Size() == int64(len(remote)) {
+			// Clean fast-forward: record the new content (the bucket copy
+			// already fetched above, since the size match confirms nothing
+			// concurrent was appended), and that the bucket already holds
+			// exactly these bytes.
+			s.state.UpdateFile(relativePath, info, HashBytes(remote))
 			s.state.MarkUploaded(relativePath)
 		}
 		// Otherwise a live session appended during the fast-forward, so the
