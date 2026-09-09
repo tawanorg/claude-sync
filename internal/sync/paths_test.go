@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -113,14 +114,14 @@ func TestContentRoundTrip(t *testing.T) {
 	bob := mustMapper(t, "/Users/mervynlally", nil)
 
 	in := []byte(`{"cwd":"/Users/merv/nexura","note":"see /Users/mervynlally/nexura and /Users/merv"}`)
-	norm := alice.NormalizeContent(in)
+	norm := alice.NormalizeContent(in, true)
 
 	want := `{"cwd":"${HOME}/nexura","note":"see /Users/mervynlally/nexura and ${HOME}"}`
 	if string(norm) != want {
 		t.Fatalf("NormalizeContent = %s, want %s", norm, want)
 	}
 
-	resolved := bob.ResolveContent(norm)
+	resolved := bob.ResolveContent(norm, true)
 	wantResolved := `{"cwd":"/Users/mervynlally/nexura","note":"see /Users/mervynlally/nexura and /Users/mervynlally"}`
 	if string(resolved) != wantResolved {
 		t.Fatalf("ResolveContent = %s, want %s", resolved, wantResolved)
@@ -132,13 +133,116 @@ func TestContentBoundaries(t *testing.T) {
 
 	// dotted and dashed continuations are part of a different name, not a boundary
 	for _, s := range []string{"/Users/merv.bak/x", "/Users/merv-old/x", "/Users/mervyn/x"} {
-		if got := m.NormalizeContent([]byte(s)); string(got) != s {
+		if got := m.NormalizeContent([]byte(s), false); string(got) != s {
 			t.Errorf("NormalizeContent(%q) = %q, should be untouched", s, got)
 		}
 	}
 	// end of data is a boundary
-	if got := m.NormalizeContent([]byte("/Users/merv")); string(got) != "${HOME}" {
+	if got := m.NormalizeContent([]byte("/Users/merv"), false); string(got) != "${HOME}" {
 		t.Errorf("NormalizeContent at EOF = %q", got)
+	}
+}
+
+// TestResolveContentJSONMode_ProducesValidJSON reproduces the actual bug
+// found via manual testing: a Linux session (home /home/user, no backslash)
+// pulled onto Windows (home C:\Users\austi, backslash — a JSON string-escape
+// character). Resolving ${HOME} with the raw path corrupts the JSON on every
+// line that embeds a cwd — 44 of 59 lines in the real transcript that
+// surfaced this. jsonMode=true must produce valid, round-trippable JSON.
+func TestResolveContentJSONMode_ProducesValidJSON(t *testing.T) {
+	linux := mustMapper(t, "/home/user", nil)
+	windows := mustMapper(t, `C:\Users\austi`, nil)
+
+	// A realistic transcript line: cwd appears standalone, and again inside a
+	// larger string (a tool command echoing the path), both common in
+	// real transcripts and both needing JSON-safe substitution.
+	in := []byte(`{"cwd":"/home/user/claude/blink-re","message":{"content":"find /home/user/claude/blink-re -maxdepth 1"}}`)
+
+	norm := linux.NormalizeContent(in, true)
+	wantNorm := `{"cwd":"${HOME}/claude/blink-re","message":{"content":"find ${HOME}/claude/blink-re -maxdepth 1"}}`
+	if string(norm) != wantNorm {
+		t.Fatalf("NormalizeContent = %s, want %s", norm, wantNorm)
+	}
+
+	resolved := windows.ResolveContent(norm, true)
+
+	// The fix's job is JSON validity, not separator cosmetics: only the
+	// ${HOME} prefix is substituted, so the rest of the path — written by
+	// the Linux source — keeps its forward slashes. Mixed separators in the
+	// resulting string are syntactically fine (forward slash needs no JSON
+	// escaping), which is exactly why this must still parse cleanly.
+	var v map[string]interface{}
+	if err := json.Unmarshal(resolved, &v); err != nil {
+		t.Fatalf("resolved content is not valid JSON: %v\ngot: %s", err, resolved)
+	}
+	if got := v["cwd"]; got != `C:\Users\austi/claude/blink-re` {
+		t.Errorf("cwd = %q, want %q", got, `C:\Users\austi/claude/blink-re`)
+	}
+	msg, _ := v["message"].(map[string]interface{})
+	wantContent := `find C:\Users\austi/claude/blink-re -maxdepth 1`
+	if got := msg["content"]; got != wantContent {
+		t.Errorf("message.content = %q, want %q", got, wantContent)
+	}
+}
+
+// TestResolveContentNonJSONMode_StaysRaw guards the .md/.txt path: those are
+// freeform text, not JSON, so the substituted path must stay in raw form —
+// JSON-escaping it there would incorrectly double every backslash in a
+// human-readable file.
+func TestResolveContentNonJSONMode_StaysRaw(t *testing.T) {
+	windows := mustMapper(t, `C:\Users\austi`, nil)
+	in := []byte(`See ${HOME}\claude\blink-re for details.`)
+	resolved := windows.ResolveContent(in, false)
+	want := `See C:\Users\austi\claude\blink-re for details.`
+	if string(resolved) != want {
+		t.Errorf("ResolveContent(jsonMode=false) = %q, want %q", resolved, want)
+	}
+}
+
+// TestNormalizeContentJSONMode_MatchesAlreadyEscapedPath covers the reverse
+// direction: content serialized by encoding/json on a Windows source already
+// has doubled backslashes before it ever reaches NormalizeContent (e.g. a
+// Desktop session record round-tripped through json.Marshal). The raw-path
+// regex used for .md/.txt can never match that doubled form, so JSON content
+// must search for the JSON-escaped form specifically.
+func TestNormalizeContentJSONMode_MatchesAlreadyEscapedPath(t *testing.T) {
+	windows := mustMapper(t, `C:\Users\austi`, nil)
+	// This is what json.Marshal(map[string]string{"cwd": `C:\Users\austi\blink-re`})
+	// actually produces on disk: doubled backslashes.
+	in := []byte(`{"cwd":"C:\\Users\\austi\\blink-re"}`)
+	norm := windows.NormalizeContent(in, true)
+	// Only the matched home prefix is replaced; the untouched "\blink-re"
+	// remainder keeps its own JSON escaping (two literal bytes for that one
+	// logical backslash) exactly as it appeared in the input.
+	want := `{"cwd":"${HOME}\\blink-re"}`
+	if string(norm) != want {
+		t.Fatalf("NormalizeContent(jsonMode=true) = %s, want %s", norm, want)
+	}
+}
+
+// TestContentRoundTrip_LinuxToWindowsToLinux mirrors the actual jumpbox ->
+// laptop -> jumpbox path a session takes in practice, confirming the fix is
+// symmetric: content pushed from Linux, resolved on Windows, must itself
+// still be valid, and pushing that Windows-resolved content back must
+// recover the original Linux-form content exactly.
+func TestContentRoundTrip_LinuxToWindowsToLinux(t *testing.T) {
+	linux := mustMapper(t, "/home/user", nil)
+	windows := mustMapper(t, `C:\Users\austi`, nil)
+
+	original := []byte(`{"cwd":"/home/user/claude/blink-re","cliSessionId":"8e3fefc8"}`)
+
+	onWire := linux.NormalizeContent(original, true)
+	onWindows := windows.ResolveContent(onWire, true)
+
+	var v map[string]interface{}
+	if err := json.Unmarshal(onWindows, &v); err != nil {
+		t.Fatalf("content materialized on Windows is not valid JSON: %v\ngot: %s", err, onWindows)
+	}
+
+	backOnWire := windows.NormalizeContent(onWindows, true)
+	backOnLinux := linux.ResolveContent(backOnWire, true)
+	if string(backOnLinux) != string(original) {
+		t.Errorf("round trip mismatch:\n got: %s\nwant: %s", backOnLinux, original)
 	}
 }
 

@@ -217,6 +217,14 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// HashBytes returns the hex SHA256 of data, in the same format as HashFile, so
+// state can be recorded from bytes already in memory without re-reading the
+// file (and without racing a concurrent writer between the write and the read).
+func HashBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 // isWithin reports whether target is root itself or lives underneath it.
 // Both are cleaned first so ".." segments cannot slip through.
 func isWithin(root, target string) bool {
@@ -356,6 +364,12 @@ func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string, excludeF
 	s.mu.Unlock()
 
 	for _, relPath := range knownPaths {
+		// Desktop session records are tracked in state but live outside
+		// claudeDir — they are never local files here, and their bucket copies
+		// must never be deleted (the registry only grows, like history).
+		if strings.HasPrefix(relPath, CCDSessionsPrefix) {
+			continue
+		}
 		if _, exists := localFiles[relPath]; !exists {
 			changes = append(changes, FileChange{
 				Path:   relPath,

@@ -88,7 +88,7 @@ func (m *mockStorage) Head(_ context.Context, key string) (*storage.ObjectInfo, 
 	defer m.mu.Unlock()
 	obj, ok := m.objects[key]
 	if !ok {
-		return nil, fmt.Errorf("object not found: %s", key)
+		return nil, fmt.Errorf("%s: %w", key, storage.ErrNotFound)
 	}
 	return &storage.ObjectInfo{
 		Key:          key,
@@ -101,7 +101,8 @@ func (m *mockStorage) BucketExists(_ context.Context) (bool, error) {
 	return true, nil
 }
 
-// ListUserObjects returns objects excluding metadata (_metadata/) and external (_external/) files.
+// ListUserObjects returns objects excluding metadata (_metadata/), external
+// (_external/), and desktop session-record (_ccd-sessions/) files.
 // Use this in tests to count only actual synced user files.
 func (m *mockStorage) ListUserObjects(ctx context.Context) ([]storage.ObjectInfo, error) {
 	objs, err := m.List(ctx, "")
@@ -110,7 +111,8 @@ func (m *mockStorage) ListUserObjects(ctx context.Context) ([]storage.ObjectInfo
 	}
 	var result []storage.ObjectInfo
 	for _, obj := range objs {
-		if strings.HasPrefix(obj.Key, "_metadata/") || strings.HasPrefix(obj.Key, "_external/") {
+		if strings.HasPrefix(obj.Key, "_metadata/") || strings.HasPrefix(obj.Key, "_external/") ||
+			strings.HasPrefix(obj.Key, CCDSessionsPrefix) {
 			continue
 		}
 		result = append(result, obj)
@@ -336,7 +338,10 @@ func TestPullDetectsConflicts(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()
 
-	writeFile(t, env.claudeDir, "history.jsonl", `{"event":"local-v1"}`)
+	// settings.json, not history.jsonl: history is union-merged on pull and
+	// never conflicts, so the generic conflict machinery is exercised with a
+	// plain synced file.
+	writeFile(t, env.claudeDir, "settings.json", `{"event":"local-v1"}`)
 
 	// Push to establish baseline
 	if _, err := env.syncer.Push(ctx); err != nil {
@@ -344,7 +349,7 @@ func TestPullDetectsConflicts(t *testing.T) {
 	}
 
 	// Modify local file (simulating local changes)
-	writeFile(t, env.claudeDir, "history.jsonl", `{"event":"local-v2"}`)
+	writeFile(t, env.claudeDir, "settings.json", `{"event":"local-v2"}`)
 
 	// Modify remote file (simulating another device pushing)
 	remoteContent := []byte(`{"event":"remote-v2"}`)
@@ -354,7 +359,7 @@ func TestPullDetectsConflicts(t *testing.T) {
 	}
 	// Small delay to ensure remote timestamp is after the state's Uploaded time
 	time.Sleep(10 * time.Millisecond)
-	if err := env.store.Upload(ctx, "history.jsonl.age", encrypted); err != nil {
+	if err := env.store.Upload(ctx, "settings.json.age", encrypted); err != nil {
 		t.Fatalf("Upload to mock failed: %v", err)
 	}
 
@@ -368,7 +373,7 @@ func TestPullDetectsConflicts(t *testing.T) {
 	}
 
 	// Local file should be preserved
-	got := readFile(t, env.claudeDir, "history.jsonl")
+	got := readFile(t, env.claudeDir, "settings.json")
 	if got != `{"event":"local-v2"}` {
 		t.Errorf("Local file should be preserved, got %q", got)
 	}
@@ -380,7 +385,7 @@ func TestPullDetectsConflicts(t *testing.T) {
 	}
 	conflictFound := false
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "history.jsonl.conflict.") {
+		if strings.HasPrefix(e.Name(), "settings.json.conflict.") {
 			conflictFound = true
 			// Verify conflict file contains remote content
 			data, _ := os.ReadFile(filepath.Join(env.claudeDir, e.Name()))
@@ -534,20 +539,21 @@ func TestConflictCreatesConflictFile(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()
 
-	// Push initial version of history.jsonl
-	writeFile(t, env.claudeDir, "history.jsonl", "line1\n")
+	// settings.json, not history.jsonl: history is union-merged on pull and
+	// never produces .conflict files.
+	writeFile(t, env.claudeDir, "settings.json", "line1\n")
 	if _, err := env.syncer.Push(ctx); err != nil {
 		t.Fatalf("Push failed: %v", err)
 	}
 
 	// Local appends
-	writeFile(t, env.claudeDir, "history.jsonl", "line1\nline2-local\n")
+	writeFile(t, env.claudeDir, "settings.json", "line1\nline2-local\n")
 
 	// Remote also changed
 	remoteData := []byte("line1\nline2-remote\n")
 	encrypted, _ := env.syncer.encryptor.Encrypt(remoteData)
 	time.Sleep(10 * time.Millisecond)
-	if err := env.store.Upload(ctx, "history.jsonl.age", encrypted); err != nil {
+	if err := env.store.Upload(ctx, "settings.json.age", encrypted); err != nil {
 		t.Fatalf("Upload to mock failed: %v", err)
 	}
 
@@ -561,12 +567,12 @@ func TestConflictCreatesConflictFile(t *testing.T) {
 	if len(result.Conflicts) != 1 {
 		t.Fatalf("Expected 1 conflict, got %d", len(result.Conflicts))
 	}
-	if result.Conflicts[0] != "history.jsonl" {
-		t.Errorf("Expected conflict on history.jsonl, got %s", result.Conflicts[0])
+	if result.Conflicts[0] != "settings.json" {
+		t.Errorf("Expected conflict on settings.json, got %s", result.Conflicts[0])
 	}
 
 	// Local preserved
-	local := readFile(t, env.claudeDir, "history.jsonl")
+	local := readFile(t, env.claudeDir, "settings.json")
 	if local != "line1\nline2-local\n" {
 		t.Errorf("Local should be preserved, got %q", local)
 	}
@@ -575,7 +581,7 @@ func TestConflictCreatesConflictFile(t *testing.T) {
 	entries, _ := os.ReadDir(env.claudeDir)
 	found := false
 	for _, e := range entries {
-		if strings.Contains(e.Name(), "history.jsonl.conflict.") {
+		if strings.Contains(e.Name(), "settings.json.conflict.") {
 			found = true
 			data, _ := os.ReadFile(filepath.Join(env.claudeDir, e.Name()))
 			if string(data) != "line1\nline2-remote\n" {

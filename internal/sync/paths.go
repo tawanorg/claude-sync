@@ -38,6 +38,8 @@ type pathMapping struct {
 	encLocal  string // localPath in Claude Code's directory encoding
 	normRe    *regexp.Regexp
 	normRepl  []byte // replacement template: token ($-escaped) + boundary group
+	jsonRe    *regexp.Regexp
+	jsonRepl  []byte
 }
 
 var pathTokenNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -58,6 +60,12 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 		// Boundary-aware: only replace the path when it is not followed by a
 		// name character, so /Users/merv never matches inside /Users/mervynlally.
 		re := regexp.MustCompile(regexp.QuoteMeta(localPath) + `([^A-Za-z0-9_.-]|$)`)
+		// Inside JSON content the path appears JSON-escaped (Go's json.Marshal
+		// always doubles backslashes), so the raw-form regex above never
+		// matches a Windows path there — jsonRe matches the escaped form
+		// instead. jsonEscape is a no-op for paths without a backslash or
+		// quote (i.e. every non-Windows path), so jsonRe/normRe coincide there.
+		jsonRe := regexp.MustCompile(regexp.QuoteMeta(jsonEscape(localPath)) + `([^A-Za-z0-9_.-]|$)`)
 		m.mappings = append(m.mappings, pathMapping{
 			name:      name,
 			localPath: localPath,
@@ -66,6 +74,8 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 			// "$$" = literal "$" in a regexp replacement template; without it
 			// "${HOME}" would itself be read as a group reference
 			normRepl: []byte("$${" + name + "}${1}"),
+			jsonRe:   jsonRe,
+			jsonRepl: []byte("$${" + name + "}${1}"),
 		})
 		return nil
 	}
@@ -169,26 +179,54 @@ func (m *PathMapper) ResolveRelPath(relPath string) (string, bool) {
 	return relPath, false
 }
 
+// jsonEscape returns s with JSON string-escape metacharacters (backslash and
+// double-quote) escaped, matching how encoding/json would write s inside a
+// JSON string value. Needed on both sides of content substitution: a raw
+// local path search never matches a Windows path as it actually appears in
+// already-serialized JSON (json.Marshal doubles every backslash), and
+// inserting a raw Windows path into JSON content corrupts that JSON's syntax
+// the same way. Since cwd fields (and any tool command/result that echoes a
+// path) appear in most lines of a transcript or Desktop session record, an
+// unescaped substitution can leave most of a file unparseable.
+func jsonEscape(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
 // NormalizeContent replaces this device's mapped path prefixes with portable
 // tokens in file content. Replacement is boundary-aware so one user's home
-// path never matches inside a longer username.
-func (m *PathMapper) NormalizeContent(data []byte) []byte {
+// path never matches inside a longer username. jsonMode must be true for
+// .json/.jsonl content (see jsonEscape) and false for freeform text (.md/.txt),
+// where the path appears — and must be substituted — in its raw form.
+func (m *PathMapper) NormalizeContent(data []byte, jsonMode bool) []byte {
 	if m == nil {
 		return data
 	}
 	for _, mp := range m.mappings {
-		data = mp.normRe.ReplaceAll(data, mp.normRepl)
+		re, repl := mp.normRe, mp.normRepl
+		if jsonMode {
+			re, repl = mp.jsonRe, mp.jsonRepl
+		}
+		data = re.ReplaceAll(data, repl)
 	}
 	return data
 }
 
 // ResolveContent replaces portable tokens with this device's local paths.
-func (m *PathMapper) ResolveContent(data []byte) []byte {
+// jsonMode must be true for .json/.jsonl content so the substituted path is
+// JSON-escaped first (see jsonEscape) instead of inserted raw, and false for
+// freeform text (.md/.txt) where the raw form is correct.
+func (m *PathMapper) ResolveContent(data []byte, jsonMode bool) []byte {
 	if m == nil {
 		return data
 	}
 	for _, mp := range m.mappings {
-		data = bytes.ReplaceAll(data, []byte(pathToken(mp.name)), []byte(mp.localPath))
+		replacement := mp.localPath
+		if jsonMode {
+			replacement = jsonEscape(mp.localPath)
+		}
+		data = bytes.ReplaceAll(data, []byte(pathToken(mp.name)), []byte(replacement))
 	}
 	return data
 }
@@ -208,6 +246,25 @@ func IsPortableContentPath(relPath string) bool {
 	}
 	switch path.Ext(relPath) {
 	case ".jsonl", ".json", ".md", ".txt":
+		return true
+	}
+	return false
+}
+
+// IsJSONContentPath reports whether a portable-content path's substitution
+// must go through the JSON-safe path (jsonMode=true in NormalizeContent /
+// ResolveContent): true for .json/.jsonl (including history.jsonl), false
+// for freeform text (.md/.txt) that IsPortableContentPath also covers.
+// Callers should only consult this after confirming IsPortableContentPath.
+func IsJSONContentPath(relPath string) bool {
+	if i := strings.Index(relPath, ".conflict."); i >= 0 {
+		relPath = relPath[:i]
+	}
+	if relPath == "history.jsonl" {
+		return true
+	}
+	switch path.Ext(relPath) {
+	case ".jsonl", ".json":
 		return true
 	}
 	return false

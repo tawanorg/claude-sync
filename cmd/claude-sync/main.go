@@ -73,6 +73,7 @@ func main() {
 		updateCmd(),
 		changelogCmd(),
 		mcpCmd(),
+		desktopCmd(),
 		autoCmd(),
 		pathsCmd(),
 	)
@@ -1010,6 +1011,18 @@ func runWebDAVWizard(webdavURL, username, password, pathPrefix string) (*storage
 	return cfg, nil
 }
 
+// reportQuietErrors prints per-file sync errors to stderr in quiet mode.
+// Session hooks run with -q, which suppresses all normal output — but a
+// failure must never be invisible.
+func reportQuietErrors(result *sync.SyncResult) {
+	if !quiet || result == nil {
+		return
+	}
+	for _, e := range result.Errors {
+		fmt.Fprintf(os.Stderr, "claude-sync: %v\n", e)
+	}
+}
+
 func pushCmd() *cobra.Command {
 	var includeMCP bool
 
@@ -1071,6 +1084,8 @@ func pushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			reportQuietErrors(result)
 
 			if !quiet {
 				fmt.Println() // Clear the progress line
@@ -1200,6 +1215,8 @@ Examples:
 			if err != nil {
 				return err
 			}
+
+			reportQuietErrors(result)
 
 			if !quiet {
 				fmt.Println() // Clear the progress line
@@ -2730,6 +2747,164 @@ func printReleaseBody(body string) {
 		// Regular text
 		fmt.Printf("  %s\n", line)
 	}
+}
+
+// Desktop session record commands
+
+func desktopCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "desktop",
+		Short: "Manage Claude Desktop session records",
+		Long:  `Manage Claude Desktop Code-tab session pointer records synced under _ccd-sessions/.`,
+	}
+	cmd.AddCommand(desktopListCmd(), desktopForgetCmd())
+	return cmd
+}
+
+func desktopListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List Desktop session records on remote storage",
+		Long: `List every Claude Desktop session pointer record on remote storage —
+every device's records, not just this machine's — with the sessionId and
+cliSessionId "claude-sync desktop forget" needs.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			records, err := syncer.ListCCDSessions(ctx)
+			if err != nil {
+				return err
+			}
+			if quiet {
+				return nil
+			}
+			if len(records) == 0 {
+				fmt.Printf("%s⋯%s No desktop session records found\n", colorDim, colorReset)
+				return nil
+			}
+
+			for _, r := range records {
+				title := r.Title
+				if title == "" {
+					title = "(untitled)"
+				}
+				archived := ""
+				if r.IsArchived {
+					archived = fmt.Sprintf(" %s[archived]%s", colorDim, colorReset)
+				}
+				fmt.Printf("%s%s%s%s\n", colorBold, title, colorReset, archived)
+				if r.CWD != "" {
+					fmt.Printf("  cwd:          %s\n", r.CWD)
+				}
+				if r.SessionID != "" {
+					fmt.Printf("  sessionId:    %s\n", r.SessionID)
+				}
+				if r.CLISessionID != "" {
+					fmt.Printf("  cliSessionId: %s\n", r.CLISessionID)
+				}
+				if r.LastActivityAt > 0 {
+					fmt.Printf("  lastActive:   %s\n", time.UnixMilli(r.LastActivityAt).Format("2006-01-02 15:04"))
+				}
+				fmt.Println()
+			}
+			return nil
+		},
+	}
+}
+
+func desktopForgetCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "forget <session-id>",
+		Short: "Permanently remove a Desktop session record everywhere",
+		Long: `Permanently remove a Claude Desktop session pointer record — locally
+(this machine's session store) and from remote storage.
+
+Desktop session records are "only grows" by design: a normal push or pull
+never deletes one just because a local copy disappeared, precisely so a
+session doesn't vanish from a device's sidebar just because another
+device's file briefly went missing. That means a genuinely broken record —
+an orphaned fork with no cliSessionId, a duplicate left over from before a
+project moved, or anything else you actually want gone — has no way to
+leave the bucket on its own. This command is the explicit, opt-in way to
+remove one.
+
+<session-id> matches either the record's own sessionId (the "local_<uuid>"
+value) or its cliSessionId — whichever you have on hand. It must match
+exactly; there is no partial or fuzzy matching.
+
+This does not touch the underlying conversation transcript under
+~/.claude/projects — only the Desktop-visible pointer. To remove the
+transcript too, delete it (or delete the conversation via Desktop's UI)
+and run a regular push, on every device that has a copy.
+
+Examples:
+  claude-sync desktop forget local_338bc4b3-d3fd-4e32-b1a6-39000abc6198
+  claude-sync desktop forget 8337ee9d-7f51-4ae3-bfa2-0b549b8ab028`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+
+			if !force {
+				fmt.Println()
+				printWarning(fmt.Sprintf("This will permanently remove the Desktop session record %q", id))
+				printWarning("locally and from remote storage. It does not touch the conversation transcript.")
+				fmt.Println()
+				fmt.Printf("%sType 'forget' to confirm:%s ", colorYellow, colorReset)
+				reader := bufio.NewReader(os.Stdin)
+				confirm, _ := reader.ReadString('\n')
+				if strings.TrimSpace(confirm) != "forget" {
+					fmt.Println("Aborted.")
+					return nil
+				}
+				fmt.Println()
+			}
+
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			syncer, err := sync.NewSyncer(cfg, quiet)
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			result, err := syncer.ForgetCCDSession(ctx, id)
+			if err != nil {
+				return fmt.Errorf("desktop forget failed: %w", err)
+			}
+
+			if quiet {
+				return nil
+			}
+			if len(result.RemovedRemoteKeys) == 0 && len(result.RemovedLocalPaths) == 0 {
+				fmt.Printf("%s⋯%s No matching record found for %q\n", colorDim, colorReset, id)
+				return nil
+			}
+			for _, key := range result.RemovedRemoteKeys {
+				fmt.Printf("  %s-%s remote: %s\n", colorYellow, colorReset, key)
+			}
+			for _, path := range result.RemovedLocalPaths {
+				fmt.Printf("  %s-%s local:  %s\n", colorYellow, colorReset, path)
+			}
+			fmt.Printf("%s✓%s Removed %d remote record(s), %d local file(s)\n",
+				colorGreen, colorReset, len(result.RemovedRemoteKeys), len(result.RemovedLocalPaths))
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	return cmd
 }
 
 // MCP sync commands
