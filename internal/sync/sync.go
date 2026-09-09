@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -189,7 +190,12 @@ func (s *Syncer) isExcluded(relPath string) bool {
 	// lock genuinely held there. A .conflict.<ts> file is this tool's own local
 	// recovery artifact; uploading it replicates the artifact to every machine,
 	// where each copy can itself be re-detected and spawn further ones.
-	base := filepath.Base(relPath)
+	//
+	// relPath is always forward-slash normalized (see GetLocalFiles), so use
+	// path.Base rather than filepath.Base: on Windows the latter is
+	// backslash-aware and wouldn't strip the directory from a '/'-separated
+	// relPath, letting debris slip past this check.
+	base := path.Base(relPath)
 	if base == ".lock" || conflictArtifactRe.MatchString(base) {
 		return true
 	}
@@ -587,9 +593,10 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 		}
 	}
 
-	// Local-form bytes actually being uploaded; for history the state hash is
-	// computed from this instead of re-reading the file, so any line a live
-	// session appends after our read still differs from state and gets pushed.
+	// On-disk bytes as read, before any path-token normalization below (the
+	// actual uploaded bytes may differ from this). The state hash is computed
+	// from this instead of re-reading the file, so any line a live session
+	// appends after our read still differs from state and gets pushed.
 	localForm := data
 
 	// Replace machine-specific paths with portable tokens in session content

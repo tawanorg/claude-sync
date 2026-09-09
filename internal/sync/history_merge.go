@@ -93,13 +93,13 @@ func MergeHistoryPayloads(local, remote []byte) (merged []byte, addedLines [][]b
 // appends concurrently are preserved, and a crash mid-append can at worst
 // leave one partial trailing line (which later merges keep verbatim).
 func appendHistoryLines(path string, lines [][]byte) error {
-	var buf bytes.Buffer
-	if data, err := os.ReadFile(path); err == nil {
-		if len(data) > 0 && data[len(data)-1] != '\n' {
-			buf.WriteByte('\n')
-		}
-	} else if !os.IsNotExist(err) {
+	needsLeadingNewline, err := fileEndsWithoutNewline(path)
+	if err != nil {
 		return err
+	}
+	var buf bytes.Buffer
+	if needsLeadingNewline {
+		buf.WriteByte('\n')
 	}
 	for _, line := range lines {
 		buf.Write(line)
@@ -116,4 +116,33 @@ func appendHistoryLines(path string, lines [][]byte) error {
 		return err
 	}
 	return f.Close()
+}
+
+// fileEndsWithoutNewline reports whether path names a non-empty file whose
+// last byte isn't '\n'. It reads only that one byte via Stat+ReadAt instead
+// of loading the whole file, since history/transcript files this merge
+// targets can run into the gigabytes.
+func fileEndsWithoutNewline(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return false, err
+	}
+	if info.Size() == 0 {
+		return false, nil
+	}
+
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, info.Size()-1); err != nil {
+		return false, err
+	}
+	return last[0] != '\n', nil
 }
