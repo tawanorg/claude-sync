@@ -195,3 +195,59 @@ func TestApplyNeverLetsUnknownOverwriteKnownStatus(t *testing.T) {
 		t.Errorf("on-disk status = %v, want archived (unknown label clobbered it)", got)
 	}
 }
+
+// A record's mtime is its observation time on the next push. If Apply leaves
+// a newly written record stamped "now", this machine later reports the other
+// device's decision as though it were made here, just now — and that inflated
+// time can beat a genuinely later change back on the originating device.
+func TestApplyStampsNewRecordWithObservedAt(t *testing.T) {
+	dir := t.TempDir()
+	observed := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	in := Incoming{
+		Record:     &Record{fields: map[string]any{"sessionId": "local_a", "cliSessionId": "abc", "isArchived": true}},
+		ObservedAt: observed,
+	}
+
+	if _, err := Apply(dir, []Incoming{in}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "local_a.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(observed) {
+		t.Errorf("record mtime = %v, want the incoming ObservedAt %v", info.ModTime(), observed)
+	}
+}
+
+// The same holds when an existing record adopts a remote archive decision:
+// the record should carry the time of that decision, not the time of the pull.
+func TestApplyStampsReconciledRecordWithObservedAt(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRecord(t, dir, "local_a.json",
+		`{"sessionId":"local_a","cliSessionId":"abc","isArchived":false}`)
+	stale := time.Now().Add(-72 * time.Hour)
+	if err := os.Chtimes(path, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	observed := time.Now().Add(-24 * time.Hour).Truncate(time.Second)
+	in := Incoming{
+		Record:     &Record{fields: map[string]any{"sessionId": "local_r", "cliSessionId": "abc", "isArchived": true}},
+		ObservedAt: observed,
+	}
+
+	res, err := Apply(dir, []Incoming{in})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Updated != 1 {
+		t.Fatalf("Updated = %d, want 1", res.Updated)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(observed) {
+		t.Errorf("reconciled record mtime = %v, want ObservedAt %v", info.ModTime(), observed)
+	}
+}

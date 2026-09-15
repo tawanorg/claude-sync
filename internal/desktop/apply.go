@@ -92,6 +92,7 @@ func Apply(dir string, incoming []Incoming) (Result, error) {
 		if err := in.Record.Save(path); err != nil {
 			return result, err
 		}
+		stampObservedAt(path, in.ObservedAt)
 		known[id] = path
 		result.Written++
 	}
@@ -131,5 +132,21 @@ func reconcileArchive(path string, in Incoming) (bool, error) {
 	if err := local.Save(path); err != nil {
 		return false, err
 	}
+	stampObservedAt(path, in.ObservedAt)
 	return true, nil
+}
+
+// stampObservedAt sets the record's mtime to the moment the decision it
+// carries was made. The mtime doubles as the observation time on the next
+// push, so leaving a freshly written record at "now" would report another
+// device's decision as though it were made here just now — an inflated time
+// that could then beat a genuinely later change on the originating device.
+// A zero ObservedAt carries no timing information and leaves the mtime alone.
+func stampObservedAt(path string, observed time.Time) {
+	if observed.IsZero() {
+		return
+	}
+	// Best effort: a failure here degrades to the previous behaviour rather
+	// than failing a pull that has already written the record correctly.
+	_ = os.Chtimes(path, observed, observed)
 }
