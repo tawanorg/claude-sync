@@ -17,6 +17,12 @@ const (
 	StateFile  = "state.json"
 	AgeKeyFile = "age-key.txt"
 
+	// ExternalKeyPrefix marks remote objects that are not files under ~/.claude
+	// (MCP servers, the desktop index). Both the pull mapper and the push
+	// change detector must treat these as out of band: they have no local
+	// path, so their absence from the local tree is never a deletion.
+	ExternalKeyPrefix = "_external/"
+
 	// MCPRemoteKey is the remote storage key for synced MCP server configs.
 	// The _external/ prefix separates it from ~/.claude/-relative files.
 	MCPRemoteKey = "_external/mcp-servers.json"

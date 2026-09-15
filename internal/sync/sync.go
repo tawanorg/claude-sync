@@ -648,7 +648,7 @@ func (s *Syncer) buildRemoteMap(remoteObjects []storage.ObjectInfo) (remoteFiles
 			continue
 		}
 		// Skip external files (handled by MCP sync)
-		if strings.HasPrefix(localPath, "_external/") {
+		if strings.HasPrefix(localPath, config.ExternalKeyPrefix) {
 			continue
 		}
 		// Skip metadata files (manifest, etc.)
