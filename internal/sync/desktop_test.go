@@ -3,11 +3,13 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/tawanorg/claude-sync/internal/desktop"
+	"github.com/tawanorg/claude-sync/internal/storage"
 )
 
 func makeIndex(t *testing.T, records map[string]string) string {
@@ -192,5 +194,93 @@ func TestPullDesktopSkipsSessionsWithoutLocalTranscripts(t *testing.T) {
 	}
 	if _, ok := labels["present-one"]; !ok {
 		t.Error("failed to write the entry whose transcript is present")
+	}
+}
+
+// failingStorage wraps the mock so a test can inject the kinds of failure a
+// real bucket produces — an unreachable endpoint, a rejected credential — as
+// distinct from the object simply not existing.
+type failingStorage struct {
+	*mockStorage
+	listErr     error
+	downloadErr error
+}
+
+func (f *failingStorage) List(ctx context.Context, prefix string) ([]storage.ObjectInfo, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.mockStorage.List(ctx, prefix)
+}
+
+func (f *failingStorage) Download(ctx context.Context, key string) ([]byte, error) {
+	if f.downloadErr != nil {
+		return nil, f.downloadErr
+	}
+	return f.mockStorage.Download(ctx, key)
+}
+
+// "Nothing pushed yet" is a specific, benign condition. A storage that cannot
+// be reached, or that rejects the credentials, is neither — reporting it as
+// "nothing pushed yet" sends the user to check the other machine when the
+// problem is in front of them.
+func TestPullDesktopDistinguishesStorageFailureFromAbsence(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("key genuinely absent is NoRemote, not an error", func(t *testing.T) {
+		env := setupTestEnv(t)
+		env.syncer.desktopDir = makeIndex(t, nil)
+		res, err := env.syncer.PullDesktop(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.NoRemote {
+			t.Error("NoRemote = false, want true when nothing has been pushed")
+		}
+	})
+
+	t.Run("listing failure surfaces as an error", func(t *testing.T) {
+		env := setupTestEnv(t)
+		env.syncer.desktopDir = makeIndex(t, nil)
+		env.syncer.storage = &failingStorage{mockStorage: env.store, listErr: errors.New("dial tcp: connection refused")}
+		res, err := env.syncer.PullDesktop(ctx)
+		if err == nil {
+			t.Fatalf("got nil error and NoRemote=%v; want the storage failure surfaced", res.NoRemote)
+		}
+	})
+
+	t.Run("download failure of an existing key surfaces as an error", func(t *testing.T) {
+		env := setupTestEnv(t)
+		env.syncer.desktopDir = makeIndex(t, map[string]string{
+			"local_a.json": `{"sessionId":"local_a","cliSessionId":"aaa","isArchived":false}`,
+		})
+		if _, err := env.syncer.PushDesktop(ctx); err != nil {
+			t.Fatal(err)
+		}
+		env.syncer.storage = &failingStorage{mockStorage: env.store, downloadErr: errors.New("403 Forbidden")}
+		res, err := env.syncer.PullDesktop(ctx)
+		if err == nil {
+			t.Fatalf("got nil error and NoRemote=%v; want the download failure surfaced", res.NoRemote)
+		}
+	})
+}
+
+// A missing index directory is the ordinary "no desktop app here" case. Any
+// other stat failure — a permission problem, a file where a directory should
+// be — is a real error on a machine that may well have the app installed.
+func TestPullDesktopOnlyTreatsNotExistAsNoIndex(t *testing.T) {
+	ctx := context.Background()
+	env := setupTestEnv(t)
+
+	// A path routed *through* a regular file stats with ENOTDIR, not ENOENT.
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env.syncer.desktopDir = filepath.Join(blocker, "acct", "ws")
+
+	res, err := env.syncer.PullDesktop(ctx)
+	if err == nil {
+		t.Fatalf("got nil error and NoIndex=%v; want the stat failure surfaced", res.NoIndex)
 	}
 }

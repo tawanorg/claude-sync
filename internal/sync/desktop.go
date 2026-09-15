@@ -167,17 +167,38 @@ func (s *Syncer) PullDesktop(ctx context.Context) (*DesktopPullResult, error) {
 		}
 		return nil, err
 	}
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+	info, err := os.Stat(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
 		// No desktop app on this machine: nothing to hydrate.
 		result.NoIndex = true
 		return result, nil
+	case err != nil:
+		// Anything else — a permission problem, a file where a directory
+		// should be — is a real failure on a machine that may well have the
+		// app installed. Do not disguise it as "no desktop app".
+		return nil, fmt.Errorf("desktop index directory: %w", err)
+	case !info.IsDir():
+		return nil, fmt.Errorf("desktop index path is not a directory: %s", dir)
 	}
 
-	encrypted, err := s.storage.Download(ctx, config.DesktopRemoteKey+".age")
+	// The storage layer has no not-found sentinel across providers, so a bare
+	// Download error cannot tell "never pushed" apart from "unreachable" or
+	// "forbidden". Listing the exact key first can: an empty listing is a
+	// genuine absence, a listing error is a storage failure, and a download
+	// that fails after the key was listed is likewise a real failure.
+	remoteKey := config.DesktopRemoteKey + ".age"
+	present, err := s.remoteKeyExists(ctx, remoteKey)
 	if err != nil {
-		// Nothing has been pushed yet. That is an empty result, not a failure.
+		return nil, fmt.Errorf("failed to check remote desktop index: %w", err)
+	}
+	if !present {
 		result.NoRemote = true
 		return result, nil
+	}
+	encrypted, err := s.storage.Download(ctx, remoteKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download desktop index: %w", err)
 	}
 
 	compressed, err := s.encryptor.Decrypt(encrypted)
@@ -307,4 +328,21 @@ func localTranscriptIDs(claudeDir string) map[string]bool {
 		ids[strings.TrimSuffix(filepath.Base(path), ".jsonl")] = true
 	}
 	return ids
+}
+
+// remoteKeyExists reports whether key is present on the remote, using a
+// prefix listing on the exact key. Unlike Download, a listing distinguishes
+// "not there" (empty result) from "cannot reach storage" (error) without
+// relying on a provider-specific not-found error.
+func (s *Syncer) remoteKeyExists(ctx context.Context, key string) (bool, error) {
+	objects, err := s.storage.List(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	for _, obj := range objects {
+		if obj.Key == key {
+			return true, nil
+		}
+	}
+	return false, nil
 }
