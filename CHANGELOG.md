@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/tawanorg/claude-sync/compare/v1.17.1...v1.17.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* make content path mapping separator- and escaping-aware ([#82](https://github.com/tawanorg/claude-sync/issues/82)) ([2b6c25c](https://github.com/tawanorg/claude-sync/commit/2b6c25c50a8ff3be09f5340a1e5711fbc81373d9))
+
 ## [1.17.1](https://github.com/tawanorg/claude-sync/compare/v1.17.0...v1.17.1) (2026-07-26)
 
 
