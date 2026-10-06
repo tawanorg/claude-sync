@@ -52,6 +52,13 @@ type Syncer struct {
 	onProgress ProgressFunc
 	cfg        *config.Config
 	paths      *PathMapper
+
+	// desktopDir overrides the resolved desktop index directory. It is set in
+	// tests; in normal use it stays empty and the directory is discovered.
+	desktopDir string
+
+	// skipArchived drops archived sessions' transcript bodies from push.
+	skipArchived bool
 }
 
 type SyncResult struct {
@@ -179,7 +186,7 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 
 	s.progress(ProgressEvent{Action: "scan", Path: "Detecting changes..."})
 
-	changes, err := s.state.DetectChanges(s.claudeDir, s.syncPaths(), s.isExcluded)
+	changes, err := s.state.DetectChanges(s.claudeDir, s.syncPaths(), s.pushExcluder())
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect changes: %w", err)
 	}
@@ -641,7 +648,7 @@ func (s *Syncer) buildRemoteMap(remoteObjects []storage.ObjectInfo) (remoteFiles
 			continue
 		}
 		// Skip external files (handled by MCP sync)
-		if strings.HasPrefix(localPath, "_external/") {
+		if strings.HasPrefix(localPath, config.ExternalKeyPrefix) {
 			continue
 		}
 		// Skip metadata files (manifest, etc.)

@@ -26,6 +26,7 @@
 - **Selective sync**: Choose `--scope sessions` to sync only conversation data (skip plugins/node_modules)
 - **Interactive wizard**: Arrow-key driven setup with validation
 - **Secure self-updating**: `claude-sync update` downloads and verifies SHA256 checksums
+- **Desktop sidebar**: Restores the desktop app's conversation list, not just the CLI's session picker
 - **Simple CLI**: `push`, `pull`, `status`, `diff`, `conflicts` commands
 - **Compression**: Gzip compression before encryption for faster syncs
 - **Shell integration**: Optional shell hooks for automatic push/pull
@@ -195,6 +196,9 @@ claude-sync pull
 | `~/.claude/settings.local.json` | Local settings |
 | `~/.claude/CLAUDE.md` | Global instructions |
 
+Plus the desktop app's sidebar index, which lives **outside** `~/.claude` — see
+[Desktop app sidebar](#desktop-app-sidebar).
+
 ### Sync scope
 
 `init` asks whether to sync everything or just conversation data; you can also set it with `--scope`:
@@ -249,6 +253,7 @@ claude-sync pull        # Download remote changes from cloud storage
 claude-sync status      # Show pending local changes
 claude-sync diff        # Show differences between local and remote
 claude-sync conflicts   # List and resolve conflicts
+claude-sync desktop     # Sync the desktop app's sidebar index
 claude-sync rebuild-history  # Rebuild ~/.claude/history.jsonl from session files
 claude-sync reset       # Reset configuration (forgot passphrase)
 claude-sync migrate     # Convert legacy remote keys to portable path-mapped keys
@@ -264,6 +269,7 @@ claude-sync pull                    # Normal pull (prompts if existing files)
 claude-sync pull --dry-run          # Preview what would change
 claude-sync pull --force            # Skip confirmation prompts
 claude-sync pull --rebuild-history  # Also rebuild history.jsonl after pulling
+claude-sync pull --desktop          # Also restore desktop app sidebar entries
 ```
 
 ### Rebuilding Prompt History
@@ -280,6 +286,61 @@ claude-sync pull --rebuild-history  # Rebuild automatically after a pull
 
 Every existing entry is preserved, recovered prompts are merged in and sorted by
 timestamp, and the previous file is kept as `history.jsonl.bak`.
+
+### Desktop app sidebar
+
+The Claude desktop app does not render its sidebar from `~/.claude/projects`. It
+keeps a separate index of small pointer records — one per conversation, each
+naming a transcript — in its own support directory:
+
+| Platform | Location | Status |
+|----------|----------|--------|
+| macOS | `~/Library/Application Support/Claude/claude-code-sessions/` | Verified |
+| Linux | `~/.config/Claude/claude-code-sessions/` | Untested |
+| Windows | `%APPDATA%\Claude\claude-code-sessions\` | Untested |
+
+> The Linux and Windows locations follow Electron's `userData` convention, which
+> the desktop app is built on, but have not been confirmed on those platforms.
+> Reports welcome. On a machine where the index is not found, the desktop
+> commands report that and change nothing.
+
+Syncing `~/.claude` alone therefore restores conversations for `claude --resume`
+while leaving the desktop sidebar empty. `push` carries this index too, and
+`pull --desktop` restores it:
+
+```bash
+claude-sync pull --desktop   # Pull conversations, then restore sidebar entries
+claude-sync desktop pull     # Restore sidebar entries only, no file sync
+claude-sync desktop push     # Upload this device's index only
+```
+
+Restart the desktop app afterwards — it reads the index at startup.
+
+Conversations that already have a sidebar entry are left untouched. Matching is
+by transcript id rather than the app's per-device record id, so repeated pulls
+never duplicate rows.
+
+A sidebar entry points at a transcript by id, so entries are only written for
+conversations this machine actually has. Sessions whose transcript is absent are
+skipped and reported — without that, the entry would appear in the sidebar and
+open onto "Session not found on disk". Pull the conversations first, or use
+`pull --desktop`, which pulls them before hydrating.
+
+**Archived conversations.** The archived flag exists only in this index; nothing
+in a transcript records it. Archive state travels with every push, and the more
+recent change wins when two devices disagree. To keep archived conversations'
+transcripts out of the upload while still syncing the fact that they are
+archived:
+
+```bash
+claude-sync push --skip-archived
+```
+
+The label is always pushed even when the transcript is not, so a conversation
+archived after its first sync still disappears from the other device's sidebar.
+
+A device that has never opened the desktop app has no index, contributes no
+archive state, and is unaffected by any of this.
 
 ### Init Options
 

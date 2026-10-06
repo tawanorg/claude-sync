@@ -356,6 +356,14 @@ func (s *SyncState) DetectChanges(claudeDir string, syncPaths []string, excludeF
 	s.mu.Unlock()
 
 	for _, relPath := range knownPaths {
+		// External objects (MCP servers, the desktop index) are tracked in
+		// state so an unchanged payload is not re-uploaded, but they have no
+		// local file. Reading their absence as a deletion would delete the
+		// remote object on every push — and if the subsystem that owns it
+		// then has nothing to re-upload, the object is simply lost.
+		if strings.HasPrefix(relPath, config.ExternalKeyPrefix) {
+			continue
+		}
 		if _, exists := localFiles[relPath]; !exists {
 			changes = append(changes, FileChange{
 				Path:   relPath,
