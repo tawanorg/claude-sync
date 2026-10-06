@@ -432,7 +432,7 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 
 	// Replace machine-specific paths with portable tokens in session content
 	if IsPortableContentPath(relativePath) {
-		data = s.paths.NormalizeContent(data)
+		data = s.paths.NormalizeContent(relativePath, data)
 	}
 
 	// Compress
@@ -487,7 +487,7 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 
 	// Replace portable tokens with this device's paths in session content
 	if IsPortableContentPath(relativePath) {
-		data = s.paths.ResolveContent(data)
+		data = s.paths.ResolveContent(relativePath, data)
 	}
 
 	// Guard against path traversal from crafted remote keys

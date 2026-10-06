@@ -113,14 +113,14 @@ func TestContentRoundTrip(t *testing.T) {
 	bob := mustMapper(t, "/Users/mervynlally", nil)
 
 	in := []byte(`{"cwd":"/Users/merv/nexura","note":"see /Users/mervynlally/nexura and /Users/merv"}`)
-	norm := alice.NormalizeContent(in)
+	norm := alice.NormalizeContent("projects/-Users-merv-nexura/s.jsonl", in)
 
 	want := `{"cwd":"${HOME}/nexura","note":"see /Users/mervynlally/nexura and ${HOME}"}`
 	if string(norm) != want {
 		t.Fatalf("NormalizeContent = %s, want %s", norm, want)
 	}
 
-	resolved := bob.ResolveContent(norm)
+	resolved := bob.ResolveContent("projects/-Users-merv-nexura/s.jsonl", norm)
 	wantResolved := `{"cwd":"/Users/mervynlally/nexura","note":"see /Users/mervynlally/nexura and /Users/mervynlally"}`
 	if string(resolved) != wantResolved {
 		t.Fatalf("ResolveContent = %s, want %s", resolved, wantResolved)
@@ -132,12 +132,12 @@ func TestContentBoundaries(t *testing.T) {
 
 	// dotted and dashed continuations are part of a different name, not a boundary
 	for _, s := range []string{"/Users/merv.bak/x", "/Users/merv-old/x", "/Users/mervyn/x"} {
-		if got := m.NormalizeContent([]byte(s)); string(got) != s {
+		if got := m.NormalizeContent("projects/x/notes.md", []byte(s)); string(got) != s {
 			t.Errorf("NormalizeContent(%q) = %q, should be untouched", s, got)
 		}
 	}
 	// end of data is a boundary
-	if got := m.NormalizeContent([]byte("/Users/merv")); string(got) != "${HOME}" {
+	if got := m.NormalizeContent("projects/x/notes.md", []byte("/Users/merv")); string(got) != "${HOME}" {
 		t.Errorf("NormalizeContent at EOF = %q", got)
 	}
 }
