@@ -160,6 +160,9 @@ func (c *Client) List(ctx context.Context, prefix string) ([]appstorage.ObjectIn
 func (c *Client) Head(ctx context.Context, key string) (*appstorage.ObjectInfo, error) {
 	attrs, err := c.client.Bucket(c.bucket).Object(key).Attrs(ctx)
 	if err != nil {
+		if errors.Is(err, storage.ErrObjectNotExist) {
+			return nil, fmt.Errorf("%s: %w", key, appstorage.ErrNotFound)
+		}
 		return nil, err
 	}
 

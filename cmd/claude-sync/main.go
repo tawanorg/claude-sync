@@ -1010,6 +1010,18 @@ func runWebDAVWizard(webdavURL, username, password, pathPrefix string) (*storage
 	return cfg, nil
 }
 
+// reportQuietErrors prints per-file sync errors to stderr in quiet mode.
+// Session hooks run with -q, which suppresses all normal output — but a
+// failure must never be invisible.
+func reportQuietErrors(result *sync.SyncResult) {
+	if !quiet || result == nil {
+		return
+	}
+	for _, e := range result.Errors {
+		fmt.Fprintf(os.Stderr, "claude-sync: %v\n", e)
+	}
+}
+
 func pushCmd() *cobra.Command {
 	var includeMCP bool
 
@@ -1071,6 +1083,8 @@ func pushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			reportQuietErrors(result)
 
 			if !quiet {
 				fmt.Println() // Clear the progress line
@@ -1200,6 +1214,8 @@ Examples:
 			if err != nil {
 				return err
 			}
+
+			reportQuietErrors(result)
 
 			if !quiet {
 				fmt.Println() // Clear the progress line

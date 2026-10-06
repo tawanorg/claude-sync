@@ -365,7 +365,7 @@ func (c *Client) Head(ctx context.Context, key string) (*storage.ObjectInfo, err
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("object not found: %s", key)
+		return nil, fmt.Errorf("%s: %w", key, storage.ErrNotFound)
 	}
 
 	if resp.StatusCode != 207 {
