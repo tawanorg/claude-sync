@@ -21,6 +21,10 @@ type FileState struct {
 	Size     int64     `json:"size"`
 	ModTime  time.Time `json:"mod_time"`
 	Uploaded time.Time `json:"uploaded,omitempty"`
+	// RemoteETag is the storage ETag of the object this device last uploaded or
+	// downloaded. When set, it decides whether the remote changed, so a skewed
+	// local clock cannot cause false conflicts.
+	RemoteETag string `json:"remote_etag,omitempty"`
 }
 
 type SyncState struct {
@@ -152,6 +156,15 @@ func (s *SyncState) MarkUploaded(relativePath string) {
 	defer s.mu.Unlock()
 	if f, ok := s.Files[relativePath]; ok {
 		f.Uploaded = time.Now()
+	}
+}
+
+// SetRemoteETag records the storage ETag of the object last transferred for a file.
+func (s *SyncState) SetRemoteETag(relativePath, etag string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f, ok := s.Files[relativePath]; ok {
+		f.RemoteETag = etag
 	}
 }
 

@@ -2,6 +2,8 @@ package sync
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +21,26 @@ import (
 type mockStorage struct {
 	mu      sync.Mutex
 	objects map[string]mockObject
+
+	// serverSkew shifts every LastModified the mock reports, to model a
+	// storage server whose clock is ahead of this device's clock.
+	serverSkew time.Duration
+	// withETags makes List and Head report the MD5 of the stored bytes as the
+	// ETag, like R2 and S3 do for a single PUT.
+	withETags bool
+}
+
+func (m *mockStorage) info(key string, obj mockObject) storage.ObjectInfo {
+	oi := storage.ObjectInfo{
+		Key:          key,
+		Size:         int64(len(obj.data)),
+		LastModified: obj.lastModified.Add(m.serverSkew),
+	}
+	if m.withETags {
+		sum := md5.Sum(obj.data)
+		oi.ETag = `"` + hex.EncodeToString(sum[:]) + `"`
+	}
+	return oi
 }
 
 type mockObject struct {
@@ -73,11 +95,7 @@ func (m *mockStorage) List(_ context.Context, prefix string) ([]storage.ObjectIn
 	var result []storage.ObjectInfo
 	for key, obj := range m.objects {
 		if strings.HasPrefix(key, prefix) {
-			result = append(result, storage.ObjectInfo{
-				Key:          key,
-				Size:         int64(len(obj.data)),
-				LastModified: obj.lastModified,
-			})
+			result = append(result, m.info(key, obj))
 		}
 	}
 	return result, nil
@@ -90,11 +108,8 @@ func (m *mockStorage) Head(_ context.Context, key string) (*storage.ObjectInfo, 
 	if !ok {
 		return nil, fmt.Errorf("object not found: %s", key)
 	}
-	return &storage.ObjectInfo{
-		Key:          key,
-		Size:         int64(len(obj.data)),
-		LastModified: obj.lastModified,
-	}, nil
+	oi := m.info(key, obj)
+	return &oi, nil
 }
 
 func (m *mockStorage) BucketExists(_ context.Context) (bool, error) {
@@ -329,6 +344,32 @@ func TestPullSkipsUnchangedFiles(t *testing.T) {
 	}
 	if len(result.Downloaded) != 0 {
 		t.Errorf("Expected 0 downloads (unchanged), got %d: %v", len(result.Downloaded), result.Downloaded)
+	}
+}
+
+// A storage server whose clock is ahead of the device clock stamps our own
+// upload with a time later than the local "uploaded" time. Pull must not treat
+// that as a remote change.
+func TestPullIgnoresServerClockAheadOfDevice(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+	env.store.withETags = true
+	env.store.serverSkew = 10 * time.Second
+
+	writeFile(t, env.claudeDir, "CLAUDE.md", "# Synced")
+	if _, err := env.syncer.Push(ctx); err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	// The file changes locally after the push (like a live session transcript).
+	writeFile(t, env.claudeDir, "CLAUDE.md", "# Synced\nmore")
+
+	result, err := env.syncer.Pull(ctx)
+	if err != nil {
+		t.Fatalf("Pull failed: %v", err)
+	}
+	if len(result.Downloaded) != 0 || len(result.Conflicts) != 0 {
+		t.Errorf("expected no downloads or conflicts, got downloaded=%v conflicts=%v", result.Downloaded, result.Conflicts)
 	}
 }
 

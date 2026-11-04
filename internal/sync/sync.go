@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -328,7 +330,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 			shouldDownload = true
 		} else if stateFile != nil {
 			// Check if remote is newer than our last known state
-			if remoteObj.LastModified.After(stateFile.Uploaded) {
+			if remoteChanged(remoteObj, stateFile) {
 				// Remote was updated after we last uploaded
 				// Check if local was also modified
 				localHash, _ := HashFile(filepath.Join(s.claudeDir, localPath))
@@ -387,7 +389,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 					}
 				}
 
-				if err := s.downloadFile(ctx, task.localPath, task.remoteObj.Key, mtime); err != nil {
+				if err := s.downloadFile(ctx, task.localPath, task.remoteObj.Key, task.remoteObj.ETag, mtime); err != nil {
 					s.progress(ProgressEvent{
 						Action: "download",
 						Path:   task.localPath,
@@ -458,13 +460,14 @@ func (s *Syncer) uploadFile(ctx context.Context, relativePath string) error {
 	hash, _ := HashFile(fullPath)
 	s.state.UpdateFile(relativePath, info, hash)
 	s.state.MarkUploaded(relativePath)
+	s.state.SetRemoteETag(relativePath, s.uploadETag(encrypted))
 
 	return nil
 }
 
 // downloadFile downloads and decrypts a file from remote storage.
 // If originalMtime is non-nil, the file's modification time will be restored to that value.
-func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey string, originalMtime *time.Time) error {
+func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey, remoteETag string, originalMtime *time.Time) error {
 	// Download
 	encrypted, err := s.storage.Download(ctx, remoteKey)
 	if err != nil {
@@ -520,8 +523,40 @@ func (s *Syncer) downloadFile(ctx context.Context, relativePath, remoteKey strin
 	hash, _ := HashFile(fullPath)
 	s.state.UpdateFile(relativePath, info, hash)
 	s.state.MarkUploaded(relativePath)
+	if remoteETag != "" {
+		s.state.SetRemoteETag(relativePath, normalizeETag(remoteETag))
+	}
 
 	return nil
+}
+
+func normalizeETag(etag string) string {
+	return strings.ToLower(strings.Trim(etag, `"`))
+}
+
+// remoteChanged reports whether the remote object differs from the one this
+// device last uploaded or downloaded. It compares ETags when one is recorded,
+// so no clock is involved; otherwise it compares the remote modification time
+// (server clock) with the local upload time (device clock), as before.
+func remoteChanged(remoteObj storage.ObjectInfo, st *FileState) bool {
+	if st.RemoteETag != "" && remoteObj.ETag != "" {
+		return normalizeETag(remoteObj.ETag) != st.RemoteETag
+	}
+	return remoteObj.LastModified.After(st.Uploaded)
+}
+
+// uploadETag returns the ETag the provider gives a single PUT of data, where it
+// is the MD5 of the bytes (R2, S3), or "" where it cannot be known locally.
+func (s *Syncer) uploadETag(data []byte) string {
+	if s.cfg == nil {
+		return ""
+	}
+	switch s.cfg.GetStorageConfig().Provider {
+	case storage.ProviderR2, storage.ProviderS3:
+		sum := md5.Sum(data)
+		return hex.EncodeToString(sum[:])
+	}
+	return ""
 }
 
 func (s *Syncer) handleConflict(ctx context.Context, relativePath string, remoteObj storage.ObjectInfo) error {
@@ -529,7 +564,7 @@ func (s *Syncer) handleConflict(ctx context.Context, relativePath string, remote
 
 	// Download remote version with conflict suffix
 	conflictPath := relativePath + ".conflict." + time.Now().Format("20060102-150405")
-	if err := s.downloadFile(ctx, conflictPath, remoteObj.Key, nil); err != nil {
+	if err := s.downloadFile(ctx, conflictPath, remoteObj.Key, remoteObj.ETag, nil); err != nil {
 		return fmt.Errorf("failed to save conflict file: %w", err)
 	}
 
@@ -734,7 +769,7 @@ func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
 			preview.WouldDownload = append(preview.WouldDownload, fp)
 		} else if stateFile != nil {
 			// Check if remote is newer than our last known state
-			if remoteObj.LastModified.After(stateFile.Uploaded) {
+			if remoteChanged(remoteObj, stateFile) {
 				// Remote was updated after we last uploaded
 				localHash, _ := HashFile(filepath.Join(s.claudeDir, localPath))
 				if localHash != stateFile.Hash {
@@ -813,7 +848,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 			stateFile := s.state.GetFile(relPath)
 			if stateFile != nil {
 				localHash, _ := HashFile(filepath.Join(s.claudeDir, relPath))
-				if localHash != stateFile.Hash || remoteObj.LastModified.After(stateFile.Uploaded) {
+				if localHash != stateFile.Hash || remoteChanged(remoteObj, stateFile) {
 					entries = append(entries, DiffEntry{
 						Path:       relPath,
 						Status:     "modified",
