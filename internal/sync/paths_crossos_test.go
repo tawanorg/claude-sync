@@ -431,3 +431,64 @@ func TestTrailingBackslashKeptOnPosixRoot(t *testing.T) {
 		t.Errorf(`the odd\ directory was not matched: %s`, got)
 	}
 }
+
+// Claude Code spells the Windows drive letter in lower case in the VS Code
+// extension (c:\...) and in upper case in the CLI (C:\...). Both name the same
+// folder, so both must map to the same token. These are pure string tests and
+// run on any OS.
+func TestDriveLetterCaseIsIgnored(t *testing.T) {
+	m := mapperFor(t, `C:\Users\bob`, `C:\Users\bob\Coding`)
+
+	for _, dir := range []string{`C:\Users\bob\Coding\app`, `c:\Users\bob\Coding\app`} {
+		key := "projects/" + EncodeClaudePath(dir) + "/s.jsonl"
+		want := "projects/${WORK}-app/s.jsonl"
+		if got := m.NormalizeRelPath(key); got != want {
+			t.Errorf("NormalizeRelPath(%q) = %q, want %q", key, got, want)
+		}
+	}
+
+	// A different folder must still be left alone.
+	other := "projects/" + EncodeClaudePath(`c:\Users\bobby\Coding`) + "/s.jsonl"
+	if got := m.NormalizeRelPath(other); strings.Contains(got, "${WORK}") {
+		t.Errorf("NormalizeRelPath(%q) = %q, should not map", other, got)
+	}
+
+	// Content: JSON-escaped and plain, both spellings, on one file.
+	in := `{"a":"c:\\Users\\bob\\Coding\\app","b":"C:\\Users\\bob\\Coding\\app"}`
+	want := `{"a":"${WORK}/app","b":"${WORK}/app"}`
+	if got := string(m.NormalizeContent(sessionFile, []byte(in))); got != want {
+		t.Errorf("json content = %s, want %s", got, want)
+	}
+	plain := "see c:\\Users\\bob\\Coding\\app and C:\\Users\\bob\\Coding\\app.\n"
+	if got := string(m.NormalizeContent(memoFile, []byte(plain))); got != "see ${WORK}/app and ${WORK}/app.\n" {
+		t.Errorf("plain content = %q", got)
+	}
+
+	// A root nested after the first match is still found when only the other
+	// spelling is present.
+	nested := `{"p":"C:\\Users\\bob\\Coding\\a\\c:\\Users\\bob\\Coding\\b"}`
+	if got := string(m.NormalizeContent(sessionFile, []byte(nested))); strings.Contains(got, `Coding`) {
+		t.Errorf("nested root left in %s", got)
+	}
+}
+
+// Two path_map entries that differ only in drive-letter case have the same
+// length. The mapper must order them the same way on every run.
+func TestSameLengthMappingsHaveStableOrder(t *testing.T) {
+	userMap := map[string]string{`c:\Users\alice\Coding`: "CODING", `C:\Users\alice\Coding`: "CODING"}
+	first, err := NewPathMapper(`C:\Users\alice`, userMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		m, err := NewPathMapper(`C:\Users\alice`, userMap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for j := range m.mappings {
+			if m.mappings[j].localPath != first.mappings[j].localPath {
+				t.Fatalf("run %d: order differs at %d: %q vs %q", i, j, m.mappings[j].localPath, first.mappings[j].localPath)
+			}
+		}
+	}
+}

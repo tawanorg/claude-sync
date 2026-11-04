@@ -77,6 +77,9 @@ type pathMapping struct {
 	// for a given content kind; localIn is how localPath is written back out.
 	normRe  [numPathContentKinds]*regexp.Regexp
 	localIn [numPathContentKinds]string
+	// altRoot is localIn with the drive letter in the other case ("" when the
+	// mapping has no drive letter); normalize uses it to spot a leftover root.
+	altRoot [numPathContentKinds]string
 
 	// resolveRe matches the portable token and its canonical "/" tail. The
 	// token is self-delimiting, so no trailing boundary is needed.
@@ -129,13 +132,14 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 			// C:/like/this, but that form shows up mostly inside quoted error
 			// text and tool output, and rewriting a device's own prose is worse
 			// than leaving one uncommon spelling unmapped.
-			root := regexp.QuoteMeta(renderLocalPath(localPath, kind))
+			root := driveLetterAnyCase(regexp.QuoteMeta(renderLocalPath(localPath, kind)))
 			tail := `((?:` + separatorPattern(kind, mp.windows) + pathSegment + `)*)`
 			// Boundary-aware: only replace the path when it is not followed by a
 			// name character, so /Users/merv never matches inside /Users/mervynlally.
 			boundary := `([^A-Za-z0-9_.-]|$)`
 			mp.normRe[kind] = regexp.MustCompile(root + tail + boundary)
 			mp.localIn[kind] = renderLocalPath(localPath, kind)
+			mp.altRoot[kind] = swapDriveLetterCase(mp.localIn[kind])
 		}
 
 		mp.resolveRe = regexp.MustCompile(regexp.QuoteMeta(pathToken(name)) + `((?:/` + pathSegment + `)*)`)
@@ -159,8 +163,17 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 	}
 
 	// Longest local path first so ~/work maps to its own token before ~ does.
+	// Equal lengths (for example c:\work and C:\work) are ordered by path and
+	// name so the result does not depend on Go's random map iteration order.
 	sort.SliceStable(m.mappings, func(i, j int) bool {
-		return len(m.mappings[i].localPath) > len(m.mappings[j].localPath)
+		a, b := m.mappings[i], m.mappings[j]
+		if len(a.localPath) != len(b.localPath) {
+			return len(a.localPath) > len(b.localPath)
+		}
+		if a.localPath != b.localPath {
+			return a.localPath < b.localPath
+		}
+		return a.name < b.name
 	})
 
 	return m, nil
@@ -180,6 +193,35 @@ func isWindowsLocalPath(p string) bool {
 		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 	}
 	return false
+}
+
+// hasDriveLetter reports whether p starts with a drive letter such as "C:".
+func hasDriveLetter(p string) bool {
+	return len(p) >= 2 && p[1] == ':' && isWindowsLocalPath(p) && !strings.HasPrefix(p, `\\`)
+}
+
+// driveLetterAnyCase makes the drive letter of a Windows path pattern match in
+// either case. Windows treats "c:\x" and "C:\x" as the same folder, and Claude
+// Code spells the drive letter differently in the VS Code extension and the CLI.
+func driveLetterAnyCase(p string) string {
+	if !hasDriveLetter(p) {
+		return p
+	}
+	c := p[:1]
+	return "[" + strings.ToLower(c) + strings.ToUpper(c) + "]" + p[1:]
+}
+
+// swapDriveLetterCase returns p with its drive letter in the other case, or ""
+// when p has no drive letter.
+func swapDriveLetterCase(p string) string {
+	if !hasDriveLetter(p) {
+		return ""
+	}
+	c := p[:1]
+	if c == strings.ToUpper(c) {
+		return strings.ToLower(c) + p[1:]
+	}
+	return strings.ToUpper(c) + p[1:]
 }
 
 // separatorPattern matches a path separator as it appears in this content kind,
@@ -282,11 +324,23 @@ func (m *PathMapper) NormalizeRelPath(relPath string) string {
 		return relPath
 	}
 	for _, mp := range m.mappings {
-		if seg == mp.encLocal || strings.HasPrefix(seg, mp.encLocal+"-") {
+		if mp.matchesEncodedDir(seg) {
 			return "projects/" + pathToken(mp.name) + seg[len(mp.encLocal):] + rest
 		}
 	}
 	return relPath
+}
+
+// matchesEncodedDir reports whether the encoded project folder seg is this
+// mapping's folder or one below it. For a Windows path with a drive letter the
+// first character is compared without regard to case, because the VS Code
+// extension writes "c--Users-..." where the CLI writes "C--Users-...".
+func (mp *pathMapping) matchesEncodedDir(seg string) bool {
+	enc := mp.encLocal
+	if mp.windows && hasDriveLetter(mp.localPath) && len(seg) >= len(enc) && strings.EqualFold(seg[:1], enc[:1]) {
+		seg = enc[:1] + seg[1:]
+	}
+	return seg == enc || strings.HasPrefix(seg, enc+"-")
 }
 
 // ResolveRelPath rewrites a portable remote path back to a local relative
@@ -357,7 +411,7 @@ func (mp *pathMapping) normalize(data []byte, kind pathContentKind) []byte {
 
 		// Every match replaced one literal root with a token, so each pass makes
 		// progress and a pass that matches nothing ends the loop.
-		if !bytes.Contains(data, root) {
+		if !bytes.Contains(data, root) && (mp.altRoot[kind] == "" || !bytes.Contains(data, []byte(mp.altRoot[kind]))) {
 			return data
 		}
 	}
