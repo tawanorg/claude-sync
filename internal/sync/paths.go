@@ -197,7 +197,7 @@ func isWindowsLocalPath(p string) bool {
 
 // hasDriveLetter reports whether p starts with a drive letter such as "C:".
 func hasDriveLetter(p string) bool {
-	return len(p) >= 2 && p[1] == ':' && isWindowsLocalPath(p) && !strings.HasPrefix(p, `\\`)
+	return len(p) >= 2 && p[1] == ':' && isWindowsLocalPath(p)
 }
 
 // driveLetterAnyCase makes the drive letter of a Windows path pattern match in
@@ -326,6 +326,38 @@ func (m *PathMapper) NormalizeRelPath(relPath string) string {
 	for _, mp := range m.mappings {
 		if mp.matchesEncodedDir(seg) {
 			return "projects/" + pathToken(mp.name) + seg[len(mp.encLocal):] + rest
+		}
+	}
+	return relPath
+}
+
+// MatchLocalSpelling returns relPath with the drive letter of its project
+// folder respelled to match a folder that already exists locally. Windows
+// treats "c--Users-x" and "C--Users-x" as one folder, but GetLocalFiles returns
+// whichever spelling is on disk, so a pulled path must use that spelling or
+// the state and conflict lookups miss. localDirs holds the project folder
+// names found on disk. relPath is returned unchanged when its folder exists
+// as spelled, when no other-case spelling exists, or when the folder is not
+// under a Windows drive-letter mapping.
+func (m *PathMapper) MatchLocalSpelling(relPath string, localDirs map[string]bool) string {
+	if m == nil {
+		return relPath
+	}
+	seg, rest, ok := splitProjectsPath(relPath)
+	if !ok || localDirs[seg] || seg == "" {
+		return relPath
+	}
+	alt := swapDriveLetterCase(seg[:1] + ":")
+	if alt == "" {
+		return relPath
+	}
+	alt = alt[:1] + seg[1:]
+	if !localDirs[alt] {
+		return relPath
+	}
+	for _, mp := range m.mappings {
+		if mp.windows && hasDriveLetter(mp.localPath) && mp.matchesEncodedDir(seg) {
+			return "projects/" + alt + rest
 		}
 	}
 	return relPath

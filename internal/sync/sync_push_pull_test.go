@@ -663,3 +663,51 @@ func TestPullSetsRestrictivePermissions(t *testing.T) {
 		t.Errorf("Expected dir mode 0700, got %o", got)
 	}
 }
+
+// A Windows machine with a VS Code project folder "c--Users-alice-app" and HOME
+// "C:\Users\alice": after a push, a pull must find the local file under the
+// spelling on disk. Otherwise it downloads and overwrites the file without a
+// conflict check, and the next push sees the "C--..." state entry as deleted.
+func TestPullKeepsLocalDriveLetterSpelling(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+	mapper, err := NewPathMapper(`C:\Users\alice`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.syncer.paths = mapper
+
+	const local = "projects/c--Users-alice-app/s.jsonl"
+	writeFile(t, env.claudeDir, local, `{"n":1}`)
+
+	if _, err := env.syncer.Push(ctx); err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+	pull, err := env.syncer.Pull(ctx)
+	if err != nil {
+		t.Fatalf("Pull failed: %v", err)
+	}
+	if len(pull.Downloaded) != 0 {
+		t.Errorf("pull re-downloaded files that are already local: %v", pull.Downloaded)
+	}
+	if st := env.syncer.state.GetFile("projects/C--Users-alice-app/s.jsonl"); st != nil {
+		t.Errorf("state has an entry under the other drive-letter spelling")
+	}
+
+	preview, err := env.syncer.PreviewPull(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.LocalOnlyFiles) != 0 || len(preview.WouldDownload) != 0 {
+		t.Errorf("preview treats the local file as separate from the remote one: %+v", preview)
+	}
+	diff, err := env.syncer.Diff(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range diff {
+		if e.Status == "local_only" || e.Status == "remote_only" {
+			t.Errorf("diff entry %s is %s", e.Path, e.Status)
+		}
+	}
+}

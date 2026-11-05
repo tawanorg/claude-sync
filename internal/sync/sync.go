@@ -310,6 +310,7 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
+	remoteFiles = s.matchLocalSpelling(remoteFiles, localFiles)
 
 	// Build list of files to download
 	type downloadTask struct {
@@ -624,6 +625,25 @@ func (s *Syncer) localPath(remoteKey string) (string, bool) {
 	return s.paths.ResolveRelPath(strings.TrimSuffix(remoteKey, ".age"))
 }
 
+// matchLocalSpelling re-keys remoteFiles so that a project folder differing
+// from an existing local one only in drive-letter case uses the local spelling.
+// Without it a pull looks up "C--..." while the disk (and the sync state) has
+// "c--...": the file is treated as new, overwritten without a conflict check,
+// and the next push sees the "C--..." state entry as deleted.
+func (s *Syncer) matchLocalSpelling(remoteFiles map[string]storage.ObjectInfo, localFiles map[string]os.FileInfo) map[string]storage.ObjectInfo {
+	localDirs := make(map[string]bool)
+	for p := range localFiles {
+		if seg, _, ok := splitProjectsPath(p); ok {
+			localDirs[seg] = true
+		}
+	}
+	out := make(map[string]storage.ObjectInfo, len(remoteFiles))
+	for p, obj := range remoteFiles {
+		out[s.paths.MatchLocalSpelling(p, localDirs)] = obj
+	}
+	return out
+}
+
 // buildRemoteMap maps remote objects to local relative paths, skipping
 // non-encrypted keys, MCP data, excluded paths, and keys with unknown path
 // tokens (reported via skipped). When a legacy un-normalized key and its
@@ -711,6 +731,7 @@ func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
+	remoteFiles = s.matchLocalSpelling(remoteFiles, localFiles)
 
 	// Analyze each remote file
 	for localPath, remoteObj := range remoteFiles {
@@ -798,6 +819,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 	}
 
 	remoteFiles, _ := s.buildRemoteMap(remoteObjects)
+	remoteFiles = s.matchLocalSpelling(remoteFiles, localFiles)
 
 	// Find local-only and modified files
 	for relPath, info := range localFiles {

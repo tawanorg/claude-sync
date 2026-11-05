@@ -492,3 +492,23 @@ func TestSameLengthMappingsHaveStableOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchLocalSpelling(t *testing.T) {
+	m, err := NewPathMapper(`C:\Users\alice`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := map[string]bool{"c--Users-alice-app": true, "D--other": true}
+	cases := []struct{ in, want string }{
+		{"projects/C--Users-alice-app/s.jsonl", "projects/c--Users-alice-app/s.jsonl"}, // other case exists locally
+		{"projects/c--Users-alice-app/s.jsonl", "projects/c--Users-alice-app/s.jsonl"}, // already the local spelling
+		{"projects/C--Users-alice-new/s.jsonl", "projects/C--Users-alice-new/s.jsonl"}, // no local folder: keep resolved
+		{"projects/d--other/s.jsonl", "projects/d--other/s.jsonl"},                     // not under a mapped root
+		{"settings.json", "settings.json"},
+	}
+	for _, c := range cases {
+		if got := m.MatchLocalSpelling(c.in, dirs); got != c.want {
+			t.Errorf("MatchLocalSpelling(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
