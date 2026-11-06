@@ -711,3 +711,79 @@ func TestPullKeepsLocalDriveLetterSpelling(t *testing.T) {
 		}
 	}
 }
+
+// Data pushed before drive-letter matching can hold a legacy
+// "projects/c--Users-alice-app/..." key next to the canonical key for the same
+// file. Both resolve to the local "c--..." path; the canonical object must win
+// whichever order the store lists them in.
+func TestBuildRemoteMapPrefersCanonicalOverLegacyDriveLetterKey(t *testing.T) {
+	env := setupTestEnv(t)
+	mapper, err := NewPathMapper(`C:\Users\alice`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.syncer.paths = mapper
+
+	const local = "projects/c--Users-alice-app/s.jsonl"
+	writeFile(t, env.claudeDir, local, `{"n":1}`)
+	localFiles, err := GetLocalFiles(env.claudeDir, env.syncer.syncPaths(), env.syncer.isExcluded)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	canonical := storage.ObjectInfo{Key: env.syncer.remoteKey(local), Size: 2}
+	legacy := storage.ObjectInfo{Key: local + ".age", Size: 1}
+	if canonical.Key == legacy.Key {
+		t.Fatalf("canonical key %q should differ from the legacy key", canonical.Key)
+	}
+
+	for _, objs := range [][]storage.ObjectInfo{{canonical, legacy}, {legacy, canonical}} {
+		remoteFiles, _ := env.syncer.buildRemoteMap(objs, localFiles)
+		if len(remoteFiles) != 1 || remoteFiles[local].Key != canonical.Key {
+			t.Errorf("listing %s, %s: got %v, want only %s -> %s",
+				objs[0].Key, objs[1].Key, remoteFiles, local, canonical.Key)
+		}
+	}
+}
+
+// A state entry under the other drive-letter spelling of a folder that is on
+// disk (from a path_map workaround or an earlier build) shares its remote key
+// with the live file. Push drops the stale entry but must not delete the key,
+// since the unchanged live file would never upload it again.
+func TestPushKeepsRemoteKeyOfLiveFileUnderOtherSpelling(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+	mapper, err := NewPathMapper(`C:\Users\alice`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.syncer.paths = mapper
+
+	const local = "projects/c--Users-alice-app/s.jsonl"
+	const other = "projects/C--Users-alice-app/s.jsonl"
+	writeFile(t, env.claudeDir, local, `{"n":1}`)
+	if _, err := env.syncer.Push(ctx); err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+	stale := *env.syncer.state.GetFile(local)
+	stale.Path = other
+	env.syncer.state.Files[other] = &stale
+
+	result, err := env.syncer.Push(ctx)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+	if len(result.Deleted) != 0 {
+		t.Errorf("push reported deletes: %v", result.Deleted)
+	}
+	key := env.syncer.remoteKey(local)
+	if _, err := env.store.Download(ctx, key); err != nil {
+		t.Errorf("remote copy %s of the live file was deleted: %v", key, err)
+	}
+	if env.syncer.state.GetFile(other) != nil {
+		t.Errorf("stale state entry %s was kept", other)
+	}
+	if env.syncer.state.GetFile(local) == nil {
+		t.Errorf("state entry %s of the live file was removed", local)
+	}
+}

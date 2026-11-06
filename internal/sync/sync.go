@@ -246,16 +246,39 @@ func (s *Syncer) Push(ctx context.Context) (*SyncResult, error) {
 
 	// Process deletes (use batch delete if available, otherwise concurrent)
 	if len(deletes) > 0 {
-		deleteKeys := make([]string, len(deletes))
-		for i, change := range deletes {
-			deleteKeys[i] = s.remoteKey(change.Path)
+		// A deleted path can share its remote key with a file that is still on
+		// disk, e.g. a state entry under "C--..." while the folder is "c--...".
+		// Deleting the key would remove that live file's only remote copy, and
+		// nothing would upload it again since it is unchanged. Such an entry
+		// only leaves the state.
+		localFiles, err := GetLocalFiles(s.claudeDir, s.syncPaths(), s.isExcluded)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get local files: %w", err)
 		}
-		if err := s.storage.DeleteBatch(ctx, deleteKeys); err != nil {
-			result.Errors = append(result.Errors, fmt.Errorf("batch delete: %w", err))
-		} else {
-			for _, change := range deletes {
+		liveKeys := make(map[string]bool, len(localFiles))
+		for p := range localFiles {
+			liveKeys[s.remoteKey(p)] = true
+		}
+
+		var deleteKeys []string
+		var toDelete []FileChange
+		for _, change := range deletes {
+			key := s.remoteKey(change.Path)
+			if liveKeys[key] {
 				s.state.RemoveFile(change.Path)
-				result.Deleted = append(result.Deleted, change.Path)
+				continue
+			}
+			deleteKeys = append(deleteKeys, key)
+			toDelete = append(toDelete, change)
+		}
+		if len(deleteKeys) > 0 {
+			if err := s.storage.DeleteBatch(ctx, deleteKeys); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("batch delete: %w", err))
+			} else {
+				for _, change := range toDelete {
+					s.state.RemoveFile(change.Path)
+					result.Deleted = append(result.Deleted, change.Path)
+				}
 			}
 		}
 	}
@@ -298,19 +321,18 @@ func (s *Syncer) Pull(ctx context.Context) (*SyncResult, error) {
 	// Download manifest for mtime restoration (best-effort, may not exist)
 	manifest, _ := s.downloadManifest(ctx)
 
-	// Build remote file map
-	remoteFiles, skipped := s.buildRemoteMap(remoteObjects)
-	for _, key := range skipped {
-		result.Errors = append(result.Errors,
-			fmt.Errorf("%s: unknown path token; add the matching path_map entry on this device", key))
-	}
-
 	// Get current local files
 	localFiles, err := GetLocalFiles(s.claudeDir, s.syncPaths(), s.isExcluded)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
-	remoteFiles = s.matchLocalSpelling(remoteFiles, localFiles)
+
+	// Build remote file map
+	remoteFiles, skipped := s.buildRemoteMap(remoteObjects, localFiles)
+	for _, key := range skipped {
+		result.Errors = append(result.Errors,
+			fmt.Errorf("%s: unknown path token; add the matching path_map entry on this device", key))
+	}
 
 	// Build list of files to download
 	type downloadTask struct {
@@ -625,30 +647,32 @@ func (s *Syncer) localPath(remoteKey string) (string, bool) {
 	return s.paths.ResolveRelPath(strings.TrimSuffix(remoteKey, ".age"))
 }
 
-// matchLocalSpelling re-keys remoteFiles so that a project folder differing
-// from an existing local one only in drive-letter case uses the local spelling.
-// Without it a pull looks up "C--..." while the disk (and the sync state) has
-// "c--...": the file is treated as new, overwritten without a conflict check,
-// and the next push sees the "C--..." state entry as deleted.
-func (s *Syncer) matchLocalSpelling(remoteFiles map[string]storage.ObjectInfo, localFiles map[string]os.FileInfo) map[string]storage.ObjectInfo {
-	localDirs := make(map[string]bool)
+// localProjectDirs returns the project folder names that exist locally, for
+// PathMapper.MatchLocalSpelling.
+func localProjectDirs(localFiles map[string]os.FileInfo) map[string]bool {
+	dirs := make(map[string]bool)
 	for p := range localFiles {
 		if seg, _, ok := splitProjectsPath(p); ok {
-			localDirs[seg] = true
+			dirs[seg] = true
 		}
 	}
-	out := make(map[string]storage.ObjectInfo, len(remoteFiles))
-	for p, obj := range remoteFiles {
-		out[s.paths.MatchLocalSpelling(p, localDirs)] = obj
-	}
-	return out
+	return dirs
 }
 
 // buildRemoteMap maps remote objects to local relative paths, skipping
 // non-encrypted keys, MCP data, excluded paths, and keys with unknown path
 // tokens (reported via skipped). When a legacy un-normalized key and its
 // normalized replacement both exist, the normalized one wins.
-func (s *Syncer) buildRemoteMap(remoteObjects []storage.ObjectInfo) (remoteFiles map[string]storage.ObjectInfo, skipped []string) {
+//
+// A project folder that differs from an existing local one only in
+// drive-letter case is mapped to the local spelling. Without it a pull looks
+// up "C--..." while the disk (and the sync state) has "c--...": the file is
+// treated as new, overwritten without a conflict check, and the next push sees
+// the "C--..." state entry as deleted. The respelling happens before the
+// duplicate check, so a legacy "c--..." key and the canonical key for the same
+// file land on one path and the canonical one wins in any listing order.
+func (s *Syncer) buildRemoteMap(remoteObjects []storage.ObjectInfo, localFiles map[string]os.FileInfo) (remoteFiles map[string]storage.ObjectInfo, skipped []string) {
+	localDirs := localProjectDirs(localFiles)
 	remoteFiles = make(map[string]storage.ObjectInfo)
 	for _, obj := range remoteObjects {
 		// Skip non-encrypted files
@@ -660,6 +684,7 @@ func (s *Syncer) buildRemoteMap(remoteObjects []storage.ObjectInfo) (remoteFiles
 			skipped = append(skipped, obj.Key)
 			continue
 		}
+		localPath = s.paths.MatchLocalSpelling(localPath, localDirs)
 		// Skip external files (handled by MCP sync)
 		if strings.HasPrefix(localPath, "_external/") {
 			continue
@@ -723,15 +748,14 @@ func (s *Syncer) PreviewPull(ctx context.Context) (*PullPreview, error) {
 		return nil, fmt.Errorf("failed to list remote objects: %w", err)
 	}
 
-	// Build remote file map
-	remoteFiles, _ := s.buildRemoteMap(remoteObjects)
-
 	// Get current local files
 	localFiles, err := GetLocalFiles(s.claudeDir, s.syncPaths(), s.isExcluded)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local files: %w", err)
 	}
-	remoteFiles = s.matchLocalSpelling(remoteFiles, localFiles)
+
+	// Build remote file map
+	remoteFiles, _ := s.buildRemoteMap(remoteObjects, localFiles)
 
 	// Analyze each remote file
 	for localPath, remoteObj := range remoteFiles {
@@ -818,8 +842,7 @@ func (s *Syncer) Diff(ctx context.Context) ([]DiffEntry, error) {
 		return nil, fmt.Errorf("failed to list remote objects: %w", err)
 	}
 
-	remoteFiles, _ := s.buildRemoteMap(remoteObjects)
-	remoteFiles = s.matchLocalSpelling(remoteFiles, localFiles)
+	remoteFiles, _ := s.buildRemoteMap(remoteObjects, localFiles)
 
 	// Find local-only and modified files
 	for relPath, info := range localFiles {
